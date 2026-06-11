@@ -1,0 +1,2 @@
+apps/admin/dist/win-unpacked/@verdiumadmin.exe filter=lfs diff=lfs merge=lfs -text
+release/admin-desktop/@verdiumadmin.exe filter=lfs diff=lfs merge=lfs -text

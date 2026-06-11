@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Verdium Preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #14181c;
+        --surface: #1b2127;
+        --panel: #20272e;
+        --text: #f6f8fa;
+        --muted: #9fb2bf;
+        --accent: #39d6c3;
+        --accent-soft: rgba(57, 214, 195, 0.16);
+        --danger: #ff6b6b;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Arial, Helvetica, sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(57, 214, 195, 0.08), transparent 30%),
+          linear-gradient(180deg, #101418 0%, #14181c 100%);
+        color: var(--text);
+      }
+      .shell {
+        padding: 24px;
+        min-height: 100vh;
+      }
+      header {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 24px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 44px;
+        letter-spacing: 0.5px;
+      }
+      .subtitle {
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 3px;
+        font-size: 12px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+        gap: 16px;
+      }
+      .view { display: block; }
+      .card {
+        background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent), var(--surface);
+        border: 1px solid var(--accent-soft);
+        border-radius: 22px;
+        padding: 20px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.22);
+      }
+      .card h2 {
+        margin: 0 0 12px;
+        font-size: 20px;
+      }
+      .card p {
+        margin: 0 0 16px;
+        color: var(--text);
+        line-height: 1.6;
+      }
+      .section-label {
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        font-size: 11px;
+        margin-bottom: 10px;
+      }
+      .buttons {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 10px;
+      }
+      button {
+        border: 0;
+        border-radius: 14px;
+        padding: 14px 16px;
+        background: var(--accent);
+        color: #06110f;
+        font-weight: 700;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .log {
+        margin-top: 16px;
+        border-radius: 14px;
+        padding: 14px;
+        background: var(--panel);
+        color: var(--muted);
+        white-space: pre-wrap;
+        min-height: 96px;
+      }
+      .mini-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(57, 214, 195, 0.08);
+        border: 1px solid rgba(57, 214, 195, 0.16);
+        color: var(--text);
+        font-size: 12px;
+      }
+      .hidden { display: none; }
+      .status-ok {
+        color: #8ef0df;
+      }
+      .status-bad {
+        color: var(--danger);
+      }
+      .login {
+        display: grid;
+        gap: 12px;
+        margin-top: 10px;
+      }
+      input, textarea {
+        width: 100%;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: var(--panel);
+        color: var(--text);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+      .footer-note {
+        margin-top: 22px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .order-list {
+        margin-top: 14px;
+        display: grid;
+        gap: 10px;
+      }
+      .order-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: var(--panel);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      .order-item button {
+        padding: 10px 12px;
+        border-radius: 10px;
+      }
+      .delivery-page {
+        display: flex;
+        flex-direction: column;
+        min-height: calc(100vh - 120px);
+        gap: 12px;
+      }
+      .delivery-top {
+        flex: 6;
+        border-radius: 16px;
+        border: 1px solid var(--accent-soft);
+        overflow: hidden;
+        background: var(--panel);
+      }
+      .delivery-top iframe {
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+      .delivery-bottom {
+        flex: 1;
+        display: grid;
+        gap: 8px;
+        padding: 14px;
+        border-radius: 14px;
+        border: 1px solid var(--accent-soft);
+        background: var(--surface);
+      }
+      .camera-preview {
+        width: 100%;
+        max-height: 62vh;
+        border-radius: 16px;
+        border: 1px solid var(--accent-soft);
+        object-fit: cover;
+        background: #0d1114;
+      }
+      .preview-links {
+        margin-top: 12px;
+        display: grid;
+        gap: 8px;
+      }
+      .preview-links a {
+        color: #8ef0df;
+      }
+      @media (max-width: 720px) {
+        h1 { font-size: 34px; }
+        .shell { padding: 16px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <h1>Verdium Preview</h1>
+        <div class="subtitle">Atrium Copia</div>
+      </header>
+
+      <div class="view" id="dashboardView">
+      <div class="grid">
+        <section class="card">
+          <div class="section-label">Customer App</div>
+          <h2>Verdium</h2>
+          <p>Customer accounts stay separate from driver accounts. QR connect, invoice upload, and payment details live here.</p>
+          <div class="buttons">
+            <button data-scope="customer" data-action="qr-connect">QR Connect</button>
+            <button data-scope="customer" data-action="invoice-upload">Invoice Upload</button>
+            <button data-scope="customer" data-action="credit-card">Credit Card</button>
+          </div>
+          <div class="mini-status" id="customerStatus">Mock internet: wifi</div>
+          <div class="log" id="customerLog">Recent upload: invoice connected</div>
+          <div class="preview-links" id="customerProofLinks"></div>
+        </section>
+
+        <section class="card">
+          <div class="section-label">Driver App</div>
+          <h2>Verdium Driver</h2>
+          <p>Driver access is email-gated and separated from customer accounts. Taxes, mileage, payouts, vehicle data, and insurance stay here.</p>
+          <div class="buttons">
+            <button data-scope="driver" data-action="sent">Sent</button>
+            <button data-scope="driver" data-action="delivered">Delivered</button>
+            <button data-scope="driver" data-action="send-vehicle-id">Send Vehicle ID</button>
+            <button data-scope="driver" data-action="send-insurance">Send Insurance</button>
+            <button data-scope="driver" data-action="payout-setup">Payout Setup</button>
+            <button data-scope="driver" data-action="tax-records">Tax Records</button>
+            <button data-scope="driver" data-action="add-bank-details">Add Bank Details</button>
+          </div>
+          <div class="mini-status" id="driverStatus">Approved driver account</div>
+          <div class="log" id="driverLog">Hash verifier: passed\nQueue order: first received first served</div>
+          <div class="order-list">
+            <div class="order-item">
+              <span>Order #D-1001</span>
+              <button class="open-order" data-order-id="D-1001" data-address="450 Howard St, San Francisco, CA" data-customer="Customer A">Open Order</button>
+            </div>
+            <div class="order-item">
+              <span>Order #D-1002</span>
+              <button class="open-order" data-order-id="D-1002" data-address="1 Ferry Building, San Francisco, CA" data-customer="Customer B">Open Order</button>
+            </div>
+            <div class="order-item">
+              <span>Order #D-1003</span>
+              <button class="open-order" data-order-id="D-1003" data-address="1100 Market St, San Francisco, CA" data-customer="Customer C">Open Order</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-label">Desktop Admin</div>
+          <h2>Verdium Admin</h2>
+          <p>Verdium Admin requires a separate administrator login before forms, logs, or handoff controls are available.</p>
+          <div class="login" id="loginBox">
+            <input id="adminEmail" placeholder="admin@verdium.example" />
+            <input id="adminPassword" type="password" placeholder="Password" />
+            <button id="loginButton">Sign In</button>
+            <div class="status-bad" id="loginError"></div>
+          </div>
+          <div class="buttons hidden" id="adminButtons" style="margin-top: 14px;">
+            <button data-scope="admin" data-action="vehicle">Vehicle ID</button>
+            <button data-scope="admin" data-action="insurance">Insurance</button>
+            <button data-scope="admin" data-action="invoice">Invoice</button>
+            <button data-scope="admin" data-action="tax-records">Tax Records</button>
+            <button data-scope="admin" data-action="payment-review">Payment Review</button>
+            <button data-scope="admin" data-action="release-delivery">Release Delivery</button>
+          </div>
+          <div class="mini-status hidden" id="adminStatus">Desktop gate online</div>
+          <div class="log" id="adminLog">Logs write to AppData and Verdium Logs next to the release executable.</div>
+        </section>
+      </div>
+      </div>
+
+      <div class="view hidden" id="deliveryView">
+        <section class="card">
+          <div class="section-label">Driver Delivery Page</div>
+          <h2 id="deliveryTitle">Order</h2>
+          <p id="deliveryCredentials">Credentials loaded: driver session + order token</p>
+          <div class="delivery-page">
+            <div class="delivery-top">
+              <iframe id="mapFrame" src="about:blank" loading="lazy"></iframe>
+            </div>
+            <div class="delivery-bottom">
+              <div id="deliveryAddress">Address:</div>
+              <div id="deliveryTimer" class="status-ok">Elapsed: 00:00</div>
+              <div class="buttons">
+                <button id="completeDeliveryButton">Complete Delivery</button>
+                <button id="backToDashboard">Back</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="view hidden" id="cameraView">
+        <section class="card">
+          <div class="section-label">Driver Proof Page</div>
+          <h2>Complete Delivery Proof</h2>
+          <p>Credential check required before camera capture is available.</p>
+          <div class="login" id="cameraCredentialBox">
+            <input id="cameraCredential" placeholder="Enter delivery camera credential" />
+            <button id="unlockCamera">Unlock Camera</button>
+            <div class="status-bad" id="cameraCredentialError"></div>
+          </div>
+          <video id="cameraVideo" class="camera-preview hidden" autoplay playsinline muted></video>
+          <canvas id="captureCanvas" class="hidden"></canvas>
+          <div class="buttons hidden" id="cameraActions">
+            <button id="saveCapture">Save Photo Proof</button>
+            <button id="cancelCamera">Cancel</button>
+          </div>
+          <div class="log" id="cameraLog">Waiting for credential.</div>
+        </section>
+      </div>
+
+        <div class="footer-note">
+          Open this file in VS Code or a browser to preview the current layout without launching the apps.
+        </div>
+    </div>
+      <script>
+        const appendLine = (box, message) => {
+          const stamp = new Date().toLocaleTimeString();
+          box.textContent = `${stamp} - ${message}\n${box.textContent}`;
+        };
+
+        const customerLog = document.getElementById('customerLog');
+        const driverLog = document.getElementById('driverLog');
+        const adminLog = document.getElementById('adminLog');
+        const customerStatus = document.getElementById('customerStatus');
+        const driverStatus = document.getElementById('driverStatus');
+        const adminStatus = document.getElementById('adminStatus');
+        const loginBox = document.getElementById('loginBox');
+        const adminButtons = document.getElementById('adminButtons');
+        const loginError = document.getElementById('loginError');
+        const customerProofLinks = document.getElementById('customerProofLinks');
+        const dashboardView = document.getElementById('dashboardView');
+        const deliveryView = document.getElementById('deliveryView');
+        const cameraView = document.getElementById('cameraView');
+        const deliveryTitle = document.getElementById('deliveryTitle');
+        const deliveryCredentials = document.getElementById('deliveryCredentials');
+        const deliveryAddress = document.getElementById('deliveryAddress');
+        const deliveryTimer = document.getElementById('deliveryTimer');
+        const mapFrame = document.getElementById('mapFrame');
+        const cameraVideo = document.getElementById('cameraVideo');
+        const cameraActions = document.getElementById('cameraActions');
+        const cameraCredential = document.getElementById('cameraCredential');
+        const cameraCredentialError = document.getElementById('cameraCredentialError');
+        const cameraLog = document.getElementById('cameraLog');
+        const captureCanvas = document.getElementById('captureCanvas');
+
+        let activeOrder = null;
+        let deliveryStartMs = 0;
+        let timerInterval = null;
+        let cameraStream = null;
+
+        const showView = (name) => {
+          dashboardView.classList.toggle('hidden', name !== 'dashboard');
+          deliveryView.classList.toggle('hidden', name !== 'delivery');
+          cameraView.classList.toggle('hidden', name !== 'camera');
+        };
+
+        const formatElapsed = (ms) => {
+          const total = Math.floor(ms / 1000);
+          const minutes = String(Math.floor(total / 60)).padStart(2, '0');
+          const seconds = String(total % 60).padStart(2, '0');
+          return `${minutes}:${seconds}`;
+        };
+
+        const startDeliveryTimer = () => {
+          clearInterval(timerInterval);
+          timerInterval = setInterval(() => {
+            const elapsed = Date.now() - deliveryStartMs;
+            deliveryTimer.textContent = `Elapsed: ${formatElapsed(elapsed)}`;
+          }, 1000);
+        };
+
+        const stopCamera = () => {
+          if (cameraStream) {
+            cameraStream.getTracks().forEach((track) => track.stop());
+            cameraStream = null;
+          }
+          cameraVideo.classList.add('hidden');
+          cameraActions.classList.add('hidden');
+        };
+
+        const actionMap = {
+          'customer:qr-connect': 'customer connected QR',
+          'customer:invoice-upload': 'customer uploaded invoice',
+          'customer:credit-card': 'customer opened credit card entry',
+          'driver:sent': 'driver marked delivery sent',
+          'driver:delivered': 'driver marked delivery delivered',
+          'driver:send-vehicle-id': 'driver sent vehicle ID',
+          'driver:send-insurance': 'driver sent insurance',
+          'driver:payout-setup': 'driver opened payout setup',
+          'driver:tax-records': 'driver opened tax records',
+          'driver:add-bank-details': 'driver added bank details',
+          'admin:vehicle': 'admin received vehicle form',
+          'admin:insurance': 'admin received insurance form',
+          'admin:invoice': 'admin received invoice',
+          'admin:tax-records': 'admin received tax records',
+          'admin:payment-review': 'admin reviewed payment',
+          'admin:release-delivery': 'admin released delivery',
+        };
+
+        document.querySelectorAll('button[data-scope]').forEach((button) => {
+          button.addEventListener('click', () => {
+            const key = `${button.dataset.scope}:${button.dataset.action}`;
+            const message = actionMap[key] || key;
+
+            if (button.dataset.scope === 'customer') {
+              appendLine(customerLog, message);
+              customerStatus.textContent = `Mock internet: wifi · ${button.dataset.action}`;
+            }
+
+            if (button.dataset.scope === 'driver') {
+              appendLine(driverLog, message);
+              driverStatus.textContent = `Approved driver account · ${button.dataset.action}`;
+            }
+
+            if (button.dataset.scope === 'admin') {
+              appendLine(adminLog, message);
+              adminStatus.textContent = `Desktop gate online · ${button.dataset.action}`;
+            }
+          });
+        });
+
+        document.getElementById('loginButton').addEventListener('click', () => {
+          const email = document.getElementById('adminEmail').value.trim().toLowerCase();
+          const password = document.getElementById('adminPassword').value;
+          const ok = email === 'admin@verdium.example' && password === 'VerdiumAdmin!2026';
+
+          if (ok) {
+            loginError.textContent = '';
+            loginBox.classList.add('hidden');
+            adminButtons.classList.remove('hidden');
+            adminStatus.classList.remove('hidden');
+            adminStatus.textContent = 'Desktop gate online · signed in';
+            appendLine(adminLog, 'admin login success');
+          } else {
+            loginError.textContent = 'Invalid admin credentials.';
+            appendLine(adminLog, 'admin login failure');
+          }
+        });
+
+        document.querySelectorAll('.open-order').forEach((button) => {
+          button.addEventListener('click', () => {
+            activeOrder = {
+              orderId: button.dataset.orderId,
+              customer: button.dataset.customer,
+              address: button.dataset.address,
+              orderCredential: `ORD-${button.dataset.orderId}-TOKEN`,
+            };
+
+            deliveryTitle.textContent = `Order ${activeOrder.orderId}`;
+            deliveryCredentials.textContent = `Credentials loaded: driver@verdium.example + ${activeOrder.orderCredential}`;
+            deliveryAddress.textContent = `Address: ${activeOrder.address}`;
+            mapFrame.src = `https://www.google.com/maps?q=${encodeURIComponent(activeOrder.address)}&output=embed`;
+            deliveryStartMs = Date.now();
+            deliveryTimer.textContent = 'Elapsed: 00:00';
+            startDeliveryTimer();
+
+            appendLine(driverLog, `opened delivery page for ${activeOrder.orderId}`);
+            showView('delivery');
+          });
+        });
+
+        document.getElementById('backToDashboard').addEventListener('click', () => {
+          clearInterval(timerInterval);
+          showView('dashboard');
+        });
+
+        document.getElementById('completeDeliveryButton').addEventListener('click', () => {
+          showView('camera');
+          appendLine(driverLog, `complete delivery pressed for ${activeOrder ? activeOrder.orderId : 'unknown'}`);
+        });
+
+        document.getElementById('unlockCamera').addEventListener('click', async () => {
+          const ok = cameraCredential.value.trim() === 'DELIVERY-CAM-2026';
+          if (!ok) {
+            cameraCredentialError.textContent = 'Invalid camera credential.';
+            appendLine(cameraLog, 'camera unlock failure');
+            return;
+          }
+
+          cameraCredentialError.textContent = '';
+          try {
+            cameraStream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: { ideal: 'environment' } },
+              audio: false,
+            });
+            cameraVideo.srcObject = cameraStream;
+            cameraVideo.classList.remove('hidden');
+            cameraActions.classList.remove('hidden');
+            appendLine(cameraLog, 'camera unlocked and preview active');
+          } catch (error) {
+            appendLine(cameraLog, `camera error: ${String(error)}`);
+          }
+        });
+
+        document.getElementById('saveCapture').addEventListener('click', () => {
+          if (!cameraVideo.videoWidth || !cameraVideo.videoHeight || !activeOrder) {
+            appendLine(cameraLog, 'cannot save: no active order or camera frame');
+            return;
+          }
+
+          const elapsedMs = Date.now() - deliveryStartMs;
+          clearInterval(timerInterval);
+
+          captureCanvas.width = cameraVideo.videoWidth;
+          captureCanvas.height = cameraVideo.videoHeight;
+          const ctx = captureCanvas.getContext('2d');
+          ctx.drawImage(cameraVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+          const imageData = captureCanvas.toDataURL('image/jpeg', 0.85);
+
+          stopCamera();
+
+          const proofLink = document.createElement('a');
+          proofLink.href = imageData;
+          proofLink.target = '_blank';
+          proofLink.rel = 'noreferrer noopener';
+          proofLink.textContent = `Delivered proof image for ${activeOrder.orderId}`;
+          customerProofLinks.prepend(proofLink);
+
+          appendLine(cameraLog, `photo saved for ${activeOrder.orderId}`);
+          appendLine(adminLog, `delivery complete ${activeOrder.orderId} · elapsed ${formatElapsed(elapsedMs)} · proof received`);
+          appendLine(customerLog, `delivery complete ${activeOrder.orderId} · image link available`);
+          appendLine(driverLog, `delivery complete ${activeOrder.orderId} · elapsed ${formatElapsed(elapsedMs)}`);
+
+          showView('dashboard');
+        });
+
+        document.getElementById('cancelCamera').addEventListener('click', () => {
+          stopCamera();
+          showView('delivery');
+        });
+      </script>
+  </body>
+</html>

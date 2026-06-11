@@ -1,0 +1,16 @@
+{
+  "name": "@verdium/admin",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Verdium Admin desktop app",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check main.js",
+    "build:win-dir": "electron-builder --dir --win"
+  },
+  "devDependencies": {
+    "electron": "30.0.0",
+    "electron-builder": "^26.15.2"
+  }
+}

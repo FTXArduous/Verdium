@@ -1,0 +1,11 @@
+{
+  "name": "@verdium/server-cache",
+  "private": true,
+  "version": "0.1.0",
+  "main": "src/cache.ts",
+  "scripts": {
+    "start": "node src/server.js",
+    "start:cache": "node src/server.js",
+    "check": "tsc -p tsconfig.json --noEmit"
+  }
+}

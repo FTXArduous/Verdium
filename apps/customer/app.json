@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Verdium",
+    "slug": "verdium-customer",
+    "scheme": "verdium",
+    "version": "1.0.0",
+    "platforms": ["android", "web"],
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#14181c",
+    "android": {
+      "package": "com.verdium.customer",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#14181c"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ]
+    },
+    "plugins": [
+      "expo-camera"
+    ]
+  }
+}

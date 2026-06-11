@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Verdium Admin</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #14181c;
+        --surface: #1b2127;
+        --panel: #20272e;
+        --text: #f6f8fa;
+        --muted: #9fb2bf;
+        --accent: #39d6c3;
+        --accent-soft: rgba(57, 214, 195, 0.16);
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Arial, Helvetica, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .shell {
+        min-height: 100vh;
+        padding: 24px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 42px;
+      }
+      .subtitle {
+        margin-top: 8px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 3px;
+        font-size: 12px;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        margin-top: 24px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--accent-soft);
+        border-radius: 20px;
+        padding: 20px;
+      }
+      .buttons {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      }
+      button {
+        border: 0;
+        border-radius: 14px;
+        padding: 14px 16px;
+        background: var(--accent);
+        color: #06110f;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      input, textarea {
+        width: 100%;
+        margin-top: 12px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: var(--panel);
+        color: var(--text);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      textarea { min-height: 140px; resize: vertical; }
+      .log {
+        margin-top: 16px;
+        background: var(--panel);
+        border-radius: 12px;
+        padding: 12px;
+        white-space: pre-wrap;
+        color: var(--muted);
+      }
+      .tab-bar {
+        display: flex;
+        gap: 10px;
+        margin-top: 24px;
+        flex-wrap: wrap;
+      }
+      .tab-btn {
+        border: 1px solid var(--accent-soft);
+        border-radius: 14px;
+        padding: 10px 20px;
+        background: var(--panel);
+        color: var(--text);
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .tab-btn.active {
+        background: rgba(57,214,195,0.16);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .tab-panel { display: none; }
+      .tab-panel.active { display: block; }
+      .invoice-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+        gap: 10px;
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        font-size: 13px;
+        align-items: center;
+      }
+      .invoice-row.header { color: var(--accent); font-weight: 700; border-bottom: 1px solid var(--accent-soft); }
+      .invoice-totals { margin-top: 18px; padding: 14px; background: var(--panel); border-radius: 14px; }
+      .invoice-totals p { margin: 4px 0; }
+      .accent { color: var(--accent); font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <h1>Verdium Admin</h1>
+        <div class="subtitle">Atrium Copia</div>
+      </header>
+
+      <section class="card login-box" id="loginCard">
+        <h2>Admin Login</h2>
+        <p>Verdium Admin requires a separate administrator login before forms, logs, or handoff controls are available.</p>
+        <input id="emailInput" type="email" placeholder="admin@verdium.example" />
+        <input id="passwordInput" type="password" placeholder="Password" />
+        <button id="loginButton">Sign In</button>
+        <div id="loginError" class="error"></div>
+      </section>
+
+      <main class="hidden" id="dashboard">
+        <div class="tab-bar">
+          <button class="tab-btn active" data-tab="gateway">Form Gateway</button>
+          <button class="tab-btn" data-tab="requests">Customer Requests</button>
+          <button class="tab-btn" data-tab="deliveries">Delivery Feed</button>
+          <button class="tab-btn" data-tab="invoices">Verdium Owner</button>
+          <button class="tab-btn" data-tab="driverlogins">Driver Logins</button>
+          <button class="tab-btn" data-tab="cancellog">Cancel Log</button>
+        </div>
+
+        <div class="tab-panel active" id="tab-gateway">
+          <div class="grid">
+            <section class="card">
+              <h2>Driver Form Gateway</h2>
+              <p>Vehicle IDs, insurance, invoices, taxes, and payment review all stay in this desktop executable before any delivery handoff.</p>
+              <div class="buttons">
+                <button data-action="vehicle">Vehicle ID</button>
+                <button data-action="insurance">Insurance</button>
+                <button data-action="invoice">Invoice</button>
+                <button data-action="tax">Tax Records</button>
+                <button data-action="payment">Payment Review</button>
+                <button data-action="sent">Sent</button>
+                <button data-action="delivered">Delivered</button>
+                <button data-action="handoff">Release Delivery</button>
+              </div>
+            </section>
+
+            <section class="card">
+              <h2>Hash Verifier</h2>
+              <p>48 character serial hash required between customer and driver.</p>
+              <textarea id="hashInput" maxlength="48" placeholder="Paste 48 character hash here"></textarea>
+              <button id="verifyButton">Verify Hash</button>
+              <div id="verifyState" class="log">Waiting for hash.</div>
+            </section>
+
+            <section class="card">
+              <h2>Sync Log</h2>
+              <div id="syncLog" class="log">Desktop gate online. Driver traffic must pass through Verdium Admin.</div>
+            </section>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="tab-requests">
+          <div class="grid" style="margin-top:16px">
+            <section class="card">
+              <h2>Customer Delivery Requests</h2>
+              <p>Requests containing address + 48-char hash + QR token arrive here first, then admin dispatches to a selected driver.</p>
+              <button id="refreshRequests">Refresh Requests</button>
+              <div id="requestFeed" class="log">No customer requests loaded yet.</div>
+            </section>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="tab-cancellog">
+          <div class="grid" style="margin-top:16px">
+            <section class="card" style="grid-column:1/-1">
+              <h2>Cancellation Log</h2>
+              <p>All delivery cancellations by admin or driver are recorded here.</p>
+              <button id="refreshCancelLog">Refresh</button>
+              <div id="cancelLogFeed" class="log">No cancellations yet.</div>
+            </section>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="tab-deliveries">
+          <div class="grid" style="margin-top:16px">
+            <section class="card">
+              <h2>Persisted Delivery Feed</h2>
+              <p>Pulls completed deliveries from server-cache so admin can ingest across restarts.</p>
+              <button id="refreshDeliveries">Refresh Feed</button>
+              <div id="deliveryFeed" class="log">No persisted deliveries loaded yet.</div>
+            </section>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="tab-invoices">
+          <div class="grid" style="margin-top:16px">
+            <section class="card" style="grid-column:1/-1">
+              <h2>Per-Delivery Invoice</h2>
+              <p>Each delivery generates: <span class="accent">$0.05 per delivery</span> + <span class="accent">$0.07 per proof photo sent</span>.</p>
+              <button id="refreshInvoices">Refresh Invoice</button>
+              <div id="invoiceTable" style="margin-top:16px">
+                <div class="invoice-row header">
+                  <span>Order ID</span>
+                  <span>Address</span>
+                  <span>Photos</span>
+                  <span>Delivery Fee</span>
+                  <span>Total</span>
+                </div>
+                <div id="invoiceRows"></div>
+              </div>
+              <div class="invoice-totals" id="invoiceTotals"></div>
+            </section>
+          </div>
+        </div>
+        </div>
+
+        <div class="tab-panel" id="tab-driverlogins">
+          <div class="grid" style="margin-top:16px">
+            <section class="card" style="grid-column:1/-1">
+              <h2>Driver Logins</h2>
+              <p>Each driver sends a sign-in ping and one every 5 minutes while active. Each ping is billed at <span class="accent">$0.01</span>. This tab is independent of deliveries and owner invoices.</p>
+              <button id="refreshPings">Refresh Driver Logins</button>
+              <div id="pingTable" style="margin-top:16px">
+                <div class="invoice-row header">
+                  <span>Driver</span>
+                  <span>Time</span>
+                  <span style="grid-column:span 3">Ping Fee</span>
+                </div>
+                <div id="pingRows"></div>
+              </div>
+              <div class="invoice-totals" id="pingTotals"></div>
+            </section>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      const loginCard = document.getElementById('loginCard');
+      const dashboard = document.getElementById('dashboard');
+      const loginError = document.getElementById('loginError');
+      const log = document.getElementById('syncLog');
+      const deliveryFeed = document.getElementById('deliveryFeed');
+      const requestFeed = document.getElementById('requestFeed');
+      const verifyState = document.getElementById('verifyState');
+      const hashInput = document.getElementById('hashInput');
+      let cacheApiBaseUrl = '';
+      const drivers = ['driver-1', 'driver-2', 'driver-3'];
+      const appendLog = async (message) => {
+        log.textContent = `${new Date().toLocaleTimeString()} - ${message}\n${log.textContent}`;
+        if (window.verdiumAdmin) {
+          await window.verdiumAdmin.logEvent({ scope: 'admin', action: message });
+        }
+      };
+
+      const ensureApiBaseUrl = async () => {
+        if (cacheApiBaseUrl) {
+          return true;
+        }
+        if (!window.verdiumAdmin || !window.verdiumAdmin.getConfig) {
+          return false;
+        }
+        const config = await window.verdiumAdmin.getConfig();
+        cacheApiBaseUrl = String((config && config.apiBaseUrl) || '').trim().replace(/\/$/, '');
+        return Boolean(cacheApiBaseUrl);
+      };
+
+      const refreshDeliveries = async () => {
+        if (!(await ensureApiBaseUrl())) {
+          deliveryFeed.textContent = 'VERDIUM_API_BASE_URL is not configured for Verdium Admin.';
+          return;
+        }
+        try {
+          const response = await fetch(`${cacheApiBaseUrl}/api/deliveries/admin`);
+          if (!response.ok) {
+            throw new Error(`status ${response.status}`);
+          }
+          const payload = await response.json();
+          const rows = payload.deliveries || [];
+          if (rows.length === 0) {
+            deliveryFeed.textContent = 'No deliveries yet.';
+            return;
+          }
+          deliveryFeed.textContent = rows
+            .map((row) => `${row.orderId} | ${row.address} | ${row.elapsedSeconds}s | ${row.deliveredAt}`)
+            .join('\n');
+        } catch (error) {
+          deliveryFeed.textContent = `Unable to reach server-cache at ${cacheApiBaseUrl}: ${String(error)}`;
+        }
+      };
+
+      const dispatchRequest = async (requestId, driverId) => {
+        if (!(await ensureApiBaseUrl())) {
+          throw new Error('VERDIUM_API_BASE_URL is not configured for Verdium Admin.');
+        }
+        const response = await fetch(`${cacheApiBaseUrl}/api/requests/admin/dispatch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requestId,
+            driverId,
+            message: `Admin requested delivery for ${requestId}`,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`dispatch failed with status ${response.status}`);
+        }
+      };
+
+      const refreshRequests = async () => {
+        if (!(await ensureApiBaseUrl())) {
+          requestFeed.textContent = 'VERDIUM_API_BASE_URL is not configured for Verdium Admin.';
+          return;
+        }
+        try {
+          const response = await fetch(`${cacheApiBaseUrl}/api/requests/admin`);
+          if (!response.ok) {
+            throw new Error(`status ${response.status}`);
+          }
+          const payload = await response.json();
+          const rows = payload.requests || [];
+          if (rows.length === 0) {
+            requestFeed.textContent = 'No customer requests yet.';
+            return;
+          }
+
+          requestFeed.innerHTML = '';
+          rows.forEach((row) => {
+            const wrap = document.createElement('div');
+            wrap.style.marginBottom = '14px';
+            wrap.innerHTML = `
+              <div><strong>${row.id}</strong> | ${row.address}</div>
+              <div>hash: ${row.hashSerial}</div>
+              <div>qr: ${row.qrToken}</div>
+              <div>status: ${row.status}${row.dispatchedTo ? ` -> ${row.dispatchedTo}` : ''}</div>
+            `;
+
+            const controls = document.createElement('div');
+            controls.style.marginTop = '8px';
+            controls.style.display = 'flex';
+            controls.style.flexWrap = 'wrap';
+            controls.style.gap = '8px';
+
+            drivers.forEach((driverId) => {
+              const button = document.createElement('button');
+              button.textContent = `Dispatch ${driverId}`;
+              button.addEventListener('click', async () => {
+                try {
+                  await dispatchRequest(row.id, driverId);
+                  await appendLog(`dispatch:${row.id}:${driverId}`);
+                  await refreshRequests();
+                } catch (error) {
+                  await appendLog(`dispatch-failed:${row.id}:${driverId}:${String(error)}`);
+                }
+              });
+              controls.appendChild(button);
+            });
+
+            wrap.appendChild(controls);
+            requestFeed.appendChild(wrap);
+          });
+        } catch (error) {
+          requestFeed.textContent = `Unable to reach request feed at ${cacheApiBaseUrl}: ${String(error)}`;
+        }
+      };
+
+      document.getElementById('loginButton').addEventListener('click', async () => {
+        const email = document.getElementById('emailInput').value;
+        const password = document.getElementById('passwordInput').value;
+        const ok = window.verdiumAdmin ? await window.verdiumAdmin.login({ email, password }) : false;
+        if (ok) {
+          loginError.textContent = '';
+          loginCard.classList.add('hidden');
+          dashboard.classList.remove('hidden');
+          await appendLog('admin-login-success');
+          await refreshDeliveries();
+          await refreshRequests();
+          await refreshPings();
+          await refreshCancelLog();
+        } else {
+          loginError.textContent = 'Invalid admin credentials.';
+          await appendLog('admin-login-failure');
+        }
+      });
+
+      document.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+
+      const postAdmin = async (url, body) => {
+        const r = await fetch(`${cacheApiBaseUrl}${url}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error(`${url} failed ${r.status}`);
+        return r.json();
+      };
+
+      const refreshRequests = async () => {
+        if (!(await ensureApiBaseUrl())) {
+          requestFeed.textContent = 'VERDIUM_API_BASE_URL is not configured.';
+          return;
+        }
+        try {
+          const payload = await (await fetch(`${cacheApiBaseUrl}/api/requests/admin`)).json();
+          const rows = (payload.requests || []).filter((r) => r.status !== 'denied' && r.status !== 'cancelled');
+          requestFeed.innerHTML = '';
+          if (rows.length === 0) {
+            requestFeed.textContent = 'No pending requests.';
+            return;
+          }
+          rows.forEach((row) => {
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'margin-bottom:18px;border:1px solid rgba(57,214,195,0.16);border-radius:14px;padding:14px';
+            const statusColor = row.status === 'confirmed' ? '#39d6c3' : row.status === 'pushed' ? '#8ef0df' : '#9fb2bf';
+            wrap.innerHTML = `
+              <div><strong>${row.id}</strong> <span style="color:${statusColor};font-size:11px">${row.status}</span></div>
+              <div style="color:#9fb2bf;font-size:12px;margin:4px 0">Hash: ${row.hashSerial ? row.hashSerial.slice(0,8)+'…' : 'n/a'} | QR: ${row.qrToken || 'n/a'}</div>
+            `;
+
+            const controls = document.createElement('div');
+            controls.style.cssText = 'margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center';
+
+            if (row.status === 'pending') {
+              // Confirm: select driver then confirm
+              const sel = document.createElement('select');
+              sel.style.cssText = 'background:#20272e;color:#f6f8fa;border:1px solid rgba(57,214,195,0.3);border-radius:10px;padding:8px 10px';
+              drivers.forEach((d) => {
+                const opt = document.createElement('option');
+                opt.value = d;
+                opt.textContent = d;
+                sel.appendChild(opt);
+              });
+              controls.appendChild(sel);
+
+              const btnConfirm = document.createElement('button');
+              btnConfirm.textContent = 'Confirm Delivery';
+              btnConfirm.style.cssText = 'background:#39d6c3;color:#06110f;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+              btnConfirm.addEventListener('click', async () => {
+                try {
+                  await postAdmin('/api/requests/admin/confirm', { requestId: row.id, driverId: sel.value });
+                  await appendLog(`confirmed:${row.id}:${sel.value}`);
+                  await refreshRequests();
+                } catch (e) { await appendLog(`confirm-failed:${String(e)}`); }
+              });
+              controls.appendChild(btnConfirm);
+
+              const btnDeny = document.createElement('button');
+              btnDeny.textContent = 'Deny';
+              btnDeny.style.cssText = 'background:#2e1a1a;color:#f06a6a;border:1px solid #f06a6a;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+              btnDeny.addEventListener('click', async () => {
+                try {
+                  await postAdmin('/api/requests/admin/deny', { requestId: row.id });
+                  await appendLog(`denied:${row.id}`);
+                  await refreshRequests();
+                } catch (e) { await appendLog(`deny-failed:${String(e)}`); }
+              });
+              controls.appendChild(btnDeny);
+            }
+
+            if (row.status === 'confirmed') {
+              const info = document.createElement('span');
+              info.style.color = '#9fb2bf';
+              info.textContent = `Driver: ${row.confirmedDriverId}`;
+              controls.appendChild(info);
+
+              const btnPush = document.createElement('button');
+              btnPush.textContent = `Add Delivery → ${row.confirmedDriverId}`;
+              btnPush.style.cssText = 'background:#39d6c3;color:#06110f;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+              btnPush.addEventListener('click', async () => {
+                try {
+                  await postAdmin('/api/requests/admin/push', { requestId: row.id });
+                  await appendLog(`pushed:${row.id}:${row.confirmedDriverId}`);
+                  await refreshRequests();
+                } catch (e) { await appendLog(`push-failed:${String(e)}`); }
+              });
+              controls.appendChild(btnPush);
+
+              const btnCancel = document.createElement('button');
+              btnCancel.textContent = 'Cancel Delivery';
+              btnCancel.style.cssText = 'background:#2e1a1a;color:#f06a6a;border:1px solid #f06a6a;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+              btnCancel.addEventListener('click', async () => {
+                try {
+                  await postAdmin('/api/requests/admin/cancel', { requestId: row.id });
+                  await appendLog(`admin-cancelled:${row.id}`);
+                  await refreshRequests();
+                  await refreshCancelLog();
+                } catch (e) { await appendLog(`cancel-failed:${String(e)}`); }
+              });
+              controls.appendChild(btnCancel);
+            }
+
+            if (row.status === 'pushed') {
+              const info = document.createElement('span');
+              info.style.color = '#39d6c3';
+              info.textContent = `Pushed to ${row.confirmedDriverId}`;
+              controls.appendChild(info);
+
+              const btnCancel = document.createElement('button');
+              btnCancel.textContent = 'Cancel Delivery';
+              btnCancel.style.cssText = 'background:#2e1a1a;color:#f06a6a;border:1px solid #f06a6a;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+              btnCancel.addEventListener('click', async () => {
+                try {
+                  await postAdmin('/api/requests/admin/cancel', { requestId: row.id });
+                  await appendLog(`admin-cancelled:${row.id}`);
+                  await refreshRequests();
+                  await refreshCancelLog();
+                } catch (e) { await appendLog(`cancel-failed:${String(e)}`); }
+              });
+              controls.appendChild(btnCancel);
+            }
+
+            wrap.appendChild(controls);
+            requestFeed.appendChild(wrap);
+          });
+        } catch (error) {
+          requestFeed.textContent = `Error: ${String(error)}`;
+        }
+      };
+
+      const refreshCancelLog = async () => {
+        if (!(await ensureApiBaseUrl())) return;
+        try {
+          const payload = await (await fetch(`${cacheApiBaseUrl}/api/admin/cancel-log`)).json();
+          const entries = payload.cancelLog || [];
+          const feed = document.getElementById('cancelLogFeed');
+          if (entries.length === 0) { feed.textContent = 'No cancellations yet.'; return; }
+          feed.textContent = entries
+            .map((e) => `${new Date(e.createdAt).toLocaleString()} | ${e.cancelledBy} | ${e.requestId}`)
+            .join('\n');
+        } catch (e) {
+          document.getElementById('cancelLogFeed').textContent = `Error: ${String(e)}`;
+        }
+      };
+
+      document.getElementById('refreshCancelLog').addEventListener('click', refreshCancelLog);
+
+          document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+          btn.classList.add('active');
+          document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+        });
+      });
+
+      const DELIVERY_FEE = 0.05;
+      const PHOTO_FEE = 0.07;
+
+      const refreshInvoices = async () => {
+        if (!(await ensureApiBaseUrl())) {
+          document.getElementById('invoiceRows').textContent = 'API not configured.';
+          return;
+        }
+        try {
+          const response = await fetch(`${cacheApiBaseUrl}/api/deliveries/admin`);
+          if (!response.ok) throw new Error(`status ${response.status}`);
+          const payload = await response.json();
+          const rows = payload.deliveries || [];
+          const container = document.getElementById('invoiceRows');
+          container.innerHTML = '';
+          let totalDeliveries = 0;
+          let totalPhotos = 0;
+          rows.forEach((row) => {
+            const photoCount = row.imageUri ? 1 : 0;
+            const deliveryCharge = DELIVERY_FEE;
+            const photoCharge = photoCount * PHOTO_FEE;
+            const rowTotal = deliveryCharge + photoCharge;
+            totalDeliveries += deliveryCharge;
+            totalPhotos += photoCharge;
+            const div = document.createElement('div');
+            div.className = 'invoice-row';
+            div.innerHTML = `
+              <span>${row.orderId}</span>
+              <span style="font-size:11px;color:var(--muted)">${row.address}</span>
+              <span>${photoCount} × $${PHOTO_FEE.toFixed(2)} = $${photoCharge.toFixed(2)}</span>
+              <span>$${deliveryCharge.toFixed(2)}</span>
+              <span class="accent">$${rowTotal.toFixed(2)}</span>
+            `;
+            container.appendChild(div);
+          });
+          const grandTotal = totalDeliveries + totalPhotos;
+          document.getElementById('invoiceTotals').innerHTML = `
+            <p>Total deliveries: <span class="accent">${rows.length}</span> × $${DELIVERY_FEE.toFixed(2)} = <span class="accent">$${totalDeliveries.toFixed(2)}</span></p>
+            <p>Total photo fees: <span class="accent">$${totalPhotos.toFixed(2)}</span> ($${PHOTO_FEE.toFixed(2)} per photo)</p>
+            <p style="font-size:18px;margin-top:10px">Grand total: <span class="accent">$${grandTotal.toFixed(2)}</span></p>
+          `;
+        } catch (error) {
+          document.getElementById('invoiceRows').textContent = `Error: ${String(error)}`;
+        }
+      };
+
+      document.getElementById('refreshInvoices').addEventListener('click', refreshInvoices);
+
+      const PING_FEE = 0.01;
+
+      const refreshPings = async () => {
+        if (!(await ensureApiBaseUrl())) {
+          document.getElementById('pingRows').textContent = 'API not configured.';
+          return;
+        }
+        try {
+          const response = await fetch(`${cacheApiBaseUrl}/api/driver/pings`);
+          if (!response.ok) throw new Error(`status ${response.status}`);
+          const payload = await response.json();
+          const pings = payload.pings || [];
+          const container = document.getElementById('pingRows');
+          container.innerHTML = '';
+
+          // Group by driver for summary
+          const byDriver = {};
+          pings.forEach((p) => {
+            byDriver[p.driverId] = byDriver[p.driverId] || { label: p.label, count: 0 };
+            byDriver[p.driverId].count++;
+            const div = document.createElement('div');
+            div.className = 'invoice-row';
+            div.innerHTML = `
+              <span>${p.label || p.driverId}</span>
+              <span style="color:var(--muted);font-size:11px">${new Date(p.createdAt).toLocaleString()}</span>
+              <span style="grid-column:span 3" class="accent">$${PING_FEE.toFixed(2)}</span>
+            `;
+            container.appendChild(div);
+          });
+
+          const grandTotal = pings.length * PING_FEE;
+          const driverSummary = Object.entries(byDriver)
+            .map(([id, d]) => `${d.label || id}: ${d.count} pings = $${(d.count * PING_FEE).toFixed(2)}`)
+            .join('<br>');
+
+          document.getElementById('pingTotals').innerHTML = `
+            <p>${driverSummary}</p>
+            <p style="font-size:18px;margin-top:10px">Total ping fees: <span class="accent">$${grandTotal.toFixed(2)}</span> (${pings.length} pings × $${PING_FEE.toFixed(2)})</p>
+          `;
+        } catch (error) {
+          document.getElementById('pingRows').textContent = `Error: ${String(error)}`;
+        }
+      };
+
+      document.getElementById('refreshPings').addEventListener('click', refreshPings);
+
+      document.getElementById('refreshDeliveries').addEventListener('click', refreshDeliveries);
+      document.getElementById('refreshRequests').addEventListener('click', refreshRequests);
+
+      document.querySelectorAll('button[data-action]').forEach((button) => {
+        button.addEventListener('click', () => appendLog(`action:${button.dataset.action}`));
+      });
+
+      document.getElementById('verifyButton').addEventListener('click', async () => {
+        const value = hashInput.value.replace(/\s+/g, '').toUpperCase();
+        const ok = /^[A-Z0-9]{48}$/.test(value);
+        verifyState.textContent = ok ? 'Hash accepted.' : 'Hash rejected.';
+        await appendLog(ok ? 'hash-verified' : 'hash-rejected');
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "@verdium/shared",
+  "private": true,
+  "version": "0.1.0",
+  "main": "src/theme.ts",
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit"
+  }
+}

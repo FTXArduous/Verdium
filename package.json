@@ -1,0 +1,21 @@
+{
+  "name": "verdium",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "start:customer": "npm run start --workspace @verdium/customer",
+    "start:driver": "npm run start --workspace @verdium/driver",
+    "start:admin": "npm run start --workspace @verdium/admin",
+    "start:cache": "npm run start --workspace @verdium/server-cache",
+    "check": "npm run check --workspaces"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@types/react": "^19.1.8",
+    "typescript": "^5.8.3"
+  }
+}
