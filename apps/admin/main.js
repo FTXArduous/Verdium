@@ -1,5 +1,7 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { spawn } = require('child_process');
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 
 // Avoid GPU/media decode instability on some Windows deployments.
@@ -39,6 +41,7 @@ let ffmpegRepairState = {
 };
 let wifiSimulationMode = false;
 let simulatedAdminProfile = null;
+let terminalServerProcess = null;
 
 function createSimulatedAdminProfile() {
   const simulationId = `${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
@@ -50,6 +53,65 @@ function createSimulatedAdminProfile() {
     storeLocation: 'Williamsburg',
     documents: [],
   };
+}
+
+function getTerminalHostAddresses() {
+  const addresses = [];
+  for (const entries of Object.values(os.networkInterfaces())) {
+    for (const entry of entries || []) {
+      if (entry.family === 'IPv4' && !entry.internal) {
+        addresses.push(`http://${entry.address}:4010`);
+      }
+    }
+  }
+  return [...new Set(addresses)];
+}
+
+function getTerminalServerPath() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'server-cache', 'server.js');
+  }
+  return path.join(__dirname, '..', '..', 'packages', 'server-cache', 'src', 'server.js');
+}
+
+function startTerminalServer() {
+  if (terminalServerProcess && !terminalServerProcess.killed) {
+    return;
+  }
+
+  const serverPath = getTerminalServerPath();
+  if (!fs.existsSync(serverPath)) {
+    appendLogLine(`[admin] terminal-server missing path=${serverPath}`);
+    return;
+  }
+
+  terminalServerProcess = spawn(process.execPath, [serverPath], {
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      VERDIUM_CACHE_PORT: '4010',
+      VERDIUM_CACHE_HOST: '0.0.0.0',
+      VERDIUM_CACHE_DATA_DIR: path.join(app.getPath('userData'), 'terminal-cache'),
+      VERDIUM_LOCAL_ONLY: 'true',
+      VERDIUM_TERMINAL_NAME: 'Verdium Terminal',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  terminalServerProcess.stdout.on('data', (data) => appendLogLine(`[admin] terminal-server ${String(data).trim()}`));
+  terminalServerProcess.stderr.on('data', (data) => appendLogLine(`[admin] terminal-server-error ${String(data).trim()}`));
+  terminalServerProcess.on('exit', (code) => {
+    appendLogLine(`[admin] terminal-server exited code=${code}`);
+    terminalServerProcess = null;
+  });
+  appendLogLine(`[admin] terminal-server started path=${serverPath}`);
+}
+
+function stopTerminalServer() {
+  if (terminalServerProcess && !terminalServerProcess.killed) {
+    terminalServerProcess.kill();
+  }
+  terminalServerProcess = null;
 }
 
 function getMediaRuntimeState() {
@@ -264,10 +326,35 @@ ipcMain.handle('verdium-config', () => {
 ipcMain.handle('verdium-set-wifi-simulation', (_event, enabled) => {
   wifiSimulationMode = Boolean(enabled);
   simulatedAdminProfile = wifiSimulationMode ? createSimulatedAdminProfile() : null;
+  if (wifiSimulationMode) {
+    startTerminalServer();
+  } else {
+    stopTerminalServer();
+  }
   appendLogLine(`[admin] wifi-simulation ${wifiSimulationMode ? 'enabled' : 'disabled'}`);
   return {
     enabled: wifiSimulationMode,
     profile: simulatedAdminProfile,
+    terminalHosts: getTerminalHostAddresses(),
+  };
+});
+
+ipcMain.handle('verdium-terminal-network', async () => {
+  let devices = [];
+  if (wifiSimulationMode) {
+    try {
+      const response = await fetch('http://127.0.0.1:4010/api/terminal/devices');
+      const payload = await response.json();
+      devices = Array.isArray(payload.devices) ? payload.devices : [];
+    } catch (_error) {
+      // The child server may still be starting.
+    }
+  }
+  return {
+    enabled: wifiSimulationMode,
+    running: Boolean(terminalServerProcess && !terminalServerProcess.killed),
+    hosts: getTerminalHostAddresses(),
+    devices,
   };
 });
 
@@ -348,6 +435,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 app.on('window-all-closed', () => {
+  stopTerminalServer();
   if (process.platform !== 'darwin') {
     app.quit();
   }

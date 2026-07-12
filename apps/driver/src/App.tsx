@@ -7,6 +7,7 @@ import { authenticateProfile, ProfileRecord } from '../../../packages/shared/src
 import {
   archiveDriverPhotosToServer,
   closeDriverNotification,
+  connectToTerminalHost,
   DriverNotification,
   DriverPhotoArchiveEntry,
   fetchDriverNotifications,
@@ -67,11 +68,16 @@ export default function App() {
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [startupServerMode, setStartupServerMode] = useState<'checking' | 'online' | 'offline'>('checking');
   const [wifiSimulationEnabled, setWifiSimulationEnabled] = useState(false);
+  const [terminalHost, setTerminalHost] = useState('');
+  const [deviceName, setDeviceName] = useState('Driver phone');
+  const [terminalConnected, setTerminalConnected] = useState(false);
+  const [terminalMessage, setTerminalMessage] = useState('');
   const notificationSlide = useRef(new Animated.Value(-380)).current;
 
   const setWifiSimulation = (enabled: boolean) => {
     setServerSimulationEnabled(enabled);
     setWifiSimulationEnabled(enabled);
+    setTerminalConnected(false);
     setStartupServerMode(enabled ? 'offline' : 'checking');
     if (enabled) {
       const simulationId = `${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
@@ -79,6 +85,25 @@ export default function App() {
       setDriverPassword('WifiSimulation!2026');
       setDriverQueue([]);
       setActiveNotification(null);
+    }
+  };
+
+  const connectToTerminal = async () => {
+    try {
+      const simulationId = `${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
+      const result = await connectToTerminalHost({
+        hostUrl: terminalHost,
+        deviceId: `driver-${simulationId}`,
+        deviceName: deviceName.trim() || 'Driver phone',
+        role: 'driver',
+      });
+      setTerminalConnected(true);
+      setTerminalMessage(`Connected to ${result.terminalName}.`);
+      setStartupServerMode('online');
+    } catch (error) {
+      setTerminalConnected(false);
+      setServerSimulationEnabled(true);
+      setTerminalMessage(`Terminal connection failed: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
   };
 
@@ -512,6 +537,17 @@ export default function App() {
           </Text>
 
           <View style={styles.card}>
+            {wifiSimulationEnabled && (
+              <View style={styles.connectionPanel}>
+                <Text style={styles.orderTitle}>Terminal Wi-Fi Connection</Text>
+                <TextInput value={terminalHost} onChangeText={setTerminalHost} placeholder="Terminal host or IP, e.g. 192.168.1.20:4010" placeholderTextColor="#9fb2bf" autoCapitalize="none" style={styles.input} />
+                <TextInput value={deviceName} onChangeText={setDeviceName} placeholder="Phone name" placeholderTextColor="#9fb2bf" style={styles.input} />
+                <Pressable onPress={connectToTerminal} style={styles.button}>
+                  <Text style={styles.buttonText}>{terminalConnected ? 'Reconnect Terminal' : 'Connect Terminal'}</Text>
+                </Pressable>
+                {terminalMessage.length > 0 && <Text style={styles.orderMeta}>{terminalMessage}</Text>}
+              </View>
+            )}
             <Text style={styles.orderTitle}>Select Driver Profile</Text>
             <View style={styles.driverRow}>
               {drivers.map((driver) => (
@@ -925,6 +961,12 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(99, 171, 255, 0.18)',
     padding: 12,
     gap: 10,
+  },
+  connectionPanel: {
+    gap: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(99, 171, 255, 0.18)',
   },
   input: {
     borderRadius: 12,

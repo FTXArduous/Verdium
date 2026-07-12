@@ -48,6 +48,7 @@ export type ProfileRecord = {
 };
 
 let serverSimulationEnabled = false;
+let terminalHostUrl = '';
 
 export function setServerSimulationEnabled(enabled: boolean) {
   serverSimulationEnabled = enabled;
@@ -55,6 +56,15 @@ export function setServerSimulationEnabled(enabled: boolean) {
 
 export function isServerSimulationEnabled() {
   return serverSimulationEnabled;
+}
+
+export function setTerminalHostUrl(hostUrl: string) {
+  const cleanHost = String(hostUrl || '').trim().replace(/\/$/, '');
+  terminalHostUrl = cleanHost && !/^https?:\/\//i.test(cleanHost) ? `http://${cleanHost}` : cleanHost;
+}
+
+export function getTerminalHostUrl() {
+  return terminalHostUrl;
 }
 
 function resolveBaseUrl(baseUrl?: string) {
@@ -68,7 +78,7 @@ function resolveBaseUrl(baseUrl?: string) {
   };
 
   const envUrl = maybeGlobal.process?.env?.EXPO_PUBLIC_VERDIUM_API_BASE_URL || maybeGlobal.__VERDIUM_API_BASE_URL__;
-  const resolved = String(baseUrl || envUrl || '').trim().replace(/\/$/, '');
+  const resolved = String(baseUrl || terminalHostUrl || envUrl || '').trim().replace(/\/$/, '');
 
   if (!resolved) {
     // Keep release builds from crashing on startup if env injection is missing.
@@ -131,6 +141,33 @@ export type ProfileImageUploadRequest = {
 export type ProfileImageUploadResponse = {
   imageUri: string;
 };
+
+export type TerminalDevice = {
+  id: string;
+  name: string;
+  role: 'customer' | 'driver';
+  ipAddress: string;
+  connectedAt: string;
+};
+
+export async function connectToTerminalHost(payload: {
+  hostUrl: string;
+  deviceId: string;
+  deviceName: string;
+  role: 'customer' | 'driver';
+}): Promise<{ terminalName: string; devices: TerminalDevice[] }> {
+  setTerminalHostUrl(payload.hostUrl);
+  setServerSimulationEnabled(false);
+  const response = await fetch(`${resolveBaseUrl()}/api/terminal/devices`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`terminal connection failed with status ${response.status}`);
+  }
+  return response.json();
+}
 
 export async function submitDeliveryCompletionToServer(
   submission: DeliverySubmission,

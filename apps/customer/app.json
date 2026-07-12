@@ -3,7 +3,7 @@
     "name": "Verdium Customer",
     "slug": "verdium-customer",
     "scheme": "verdium",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "platforms": [
       "android",
       "web"
@@ -12,7 +12,7 @@
     "backgroundColor": "#14181c",
     "android": {
       "package": "com.verdium.customer",
-      "versionCode": 7,
+      "versionCode": 8,
       "adaptiveIcon": {
         "backgroundColor": "#14181c"
       },

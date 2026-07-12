@@ -4,5 +4,8 @@ directories:
 extraFiles:
   - from: node_modules/electron/dist/ffmpeg.dll
     to: ffmpeg.dll
+extraResources:
+  - from: ../../packages/server-cache/src/server.js
+    to: server-cache/server.js
 files: []
 electronVersion: 30.0.0

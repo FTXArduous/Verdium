@@ -16,4 +16,7 @@ contextBridge.exposeInMainWorld('verdiumAdmin', {
   setWifiSimulation(enabled) {
     return ipcRenderer.invoke('verdium-set-wifi-simulation', enabled);
   },
+  getTerminalNetwork() {
+    return ipcRenderer.invoke('verdium-terminal-network');
+  },
 });

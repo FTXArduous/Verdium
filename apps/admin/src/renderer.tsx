@@ -9,6 +9,7 @@ export function AdminRenderer() {
   const verifier = bridge.registerVerifier();
   const [startupHealth, setStartupHealth] = useState<any>(null);
   const [wifiSimulationEnabled, setWifiSimulationEnabled] = useState(false);
+  const [terminalNetwork, setTerminalNetwork] = useState<any>(null);
 
   useEffect(() => {
     const adminApi = (window as any)?.verdiumAdmin;
@@ -24,6 +25,22 @@ export function AdminRenderer() {
       });
     });
   }, []);
+
+  useEffect(() => {
+    if (!wifiSimulationEnabled) {
+      setTerminalNetwork(null);
+      return;
+    }
+
+    const adminApi = (window as any)?.verdiumAdmin;
+    if (!adminApi?.getTerminalNetwork) {
+      return;
+    }
+    const refresh = () => adminApi.getTerminalNetwork().then(setTerminalNetwork).catch(() => undefined);
+    refresh();
+    const interval = window.setInterval(refresh, 3000);
+    return () => window.clearInterval(interval);
+  }, [wifiSimulationEnabled]);
 
   const startupMessage = useMemo(() => {
     if (!startupHealth) {
@@ -68,6 +85,9 @@ export function AdminRenderer() {
     const result = await adminApi.setWifiSimulation(enabled);
     setWifiSimulationEnabled(result.enabled);
     setStartupHealth(await adminApi.getStartupHealth());
+    if (result.enabled) {
+      setTerminalNetwork(await adminApi.getTerminalNetwork());
+    }
   };
 
   return (
@@ -87,6 +107,22 @@ export function AdminRenderer() {
           <strong>Startup Status</strong>
           <p style={startupText}>{startupMessage}</p>
         </div>
+        {wifiSimulationEnabled && (
+          <div style={terminalPanel}>
+            <strong>Terminal Wi-Fi Host</strong>
+            <p style={startupText}>Use one of these URLs in the customer or driver app, then select Connect Terminal.</p>
+            {(terminalNetwork?.hosts || []).map((host: string) => <code key={host} style={hostLine}>{host}</code>)}
+            {terminalNetwork?.hosts?.length === 0 && <p style={startupText}>No LAN IPv4 address found. Connect the terminal to Wi-Fi or Ethernet first.</p>}
+            <strong style={deviceTitle}>Connected Mobile Devices</strong>
+            {(terminalNetwork?.devices || []).length === 0 ? (
+              <p style={startupText}>{terminalNetwork?.running ? 'Waiting for a customer or driver phone to connect.' : 'Starting the terminal Wi-Fi host...'}</p>
+            ) : (
+              <div style={deviceList}>
+                {terminalNetwork.devices.map((device: any) => <span key={device.id}>{device.name} ({device.role}) - {device.ipAddress}</span>)}
+              </div>
+            )}
+          </div>
+        )}
         <h2 style={sectionTitle}>Form Gateway</h2>
         <p style={body}>All driver-side vehicle, insurance, invoice, and tax submissions must pass through this desktop executable before release.</p>
         <div style={grid}>
@@ -114,6 +150,10 @@ const grid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(14
 const button = { background: theme.colors.accent, color: '#06110f', border: 'none', borderRadius: 14, padding: '14px 16px', fontWeight: 700 } as const;
 const startupBanner = { marginBottom: 16, background: theme.colors.panel, borderRadius: 14, border: `1px solid ${theme.colors.accentSoft}`, padding: 12 } as const;
 const startupText = { margin: '8px 0 0', color: theme.colors.muted, lineHeight: 1.45 } as const;
+const terminalPanel = { marginBottom: 16, background: theme.colors.panel, borderRadius: 14, border: `1px solid ${theme.colors.accentSoft}`, padding: 12 } as const;
+const hostLine = { display: 'block', marginTop: 8, color: theme.colors.text } as const;
+const deviceTitle = { display: 'block', marginTop: 16 } as const;
+const deviceList = { display: 'grid', gap: 6, marginTop: 8, color: theme.colors.muted } as const;
 const simulationToggle = { display: 'flex', alignItems: 'center', gap: 8, color: theme.colors.muted, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' } as const;
 const panel = { marginTop: 18, background: theme.colors.panel, borderRadius: 16, padding: 16 } as const;
 const pre = { margin: 0, whiteSpace: 'pre-wrap', color: theme.colors.muted } as const;
