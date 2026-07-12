@@ -3,7 +3,7 @@
     "name": "Verdium Driver",
     "slug": "verdium-driver",
     "scheme": "verdium-driver",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "platforms": [
       "android",
       "web"
@@ -12,7 +12,7 @@
     "backgroundColor": "#14181c",
     "android": {
       "package": "com.verdium.driver",
-      "versionCode": 1,
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#14181c"
       },

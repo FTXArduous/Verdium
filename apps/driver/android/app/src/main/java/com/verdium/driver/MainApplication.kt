@@ -2,6 +2,9 @@ package com.verdium.driver
 
 import android.app.Application
 import android.content.res.Configuration
+import android.util.Log
+import java.io.File
+import java.util.Date
 
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
@@ -42,6 +45,18 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+    Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+      try {
+        val crashFile = File(filesDir, "verdium-driver-crash.log")
+        crashFile.appendText("${Date()} [${thread.name}] ${throwable::class.java.name}: ${throwable.message}\n")
+        crashFile.appendText(Log.getStackTraceString(throwable))
+        crashFile.appendText("\n\n")
+      } catch (_: Exception) {
+      }
+      Log.e("VerdiumDriver", "Uncaught exception", throwable)
+      previousHandler?.uncaughtException(thread, throwable)
+    }
     SoLoader.init(this, OpenSourceMergedSoMapping)
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
       // If you opted-in for the New Architecture, we load the native entry point for this app.

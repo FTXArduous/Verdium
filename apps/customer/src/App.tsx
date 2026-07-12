@@ -4,11 +4,12 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { WebView } from 'react-native-webview';
 import { getCustomerDeliveryProofs } from '../../../packages/shared/src/mockHandoff';
-import { authenticateProfile, ProfileRecord } from '../../../packages/shared/src/profileVault';
+import { authenticateProfile } from '../../../packages/shared/src/profileVault';
 import { generateTestHash } from '../../../packages/shared/src/security';
 import { normalizeVirginiaStoreLocation, VIRGINIA_STORE_LOCATIONS } from '../../../packages/shared/src/storeLocations';
 import {
   CustomerDeliveryRecord,
+  ProfileRecord,
   CustomerRequestRecord,
   cancelCustomerRequestToServer,
   fetchCustomerDeliveriesFromServer,
@@ -377,7 +378,7 @@ export default function App() {
                     <Text style={styles.orderTitle}>{document.label}</Text>
                     <Text style={styles.muted}>{document.summary}</Text>
                     {document.imageUri ? (
-                      <Pressable onPress={() => Linking.openURL(document.imageUri)} style={styles.buttonMuted}>
+                      <Pressable onPress={() => document.imageUri && Linking.openURL(document.imageUri)} style={styles.buttonMuted}>
                         <Text style={styles.buttonText}>Open Document Image</Text>
                       </Pressable>
                     ) : (
@@ -624,6 +625,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(99, 171, 255, 0.18)',
     padding: 14,
+    gap: 6,
+  },
+  profileGrid: {
+    gap: 10,
+  },
+  profileCard: {
+    backgroundColor: '#171b20',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    padding: 12,
     gap: 6,
   },
   notificationCard: {

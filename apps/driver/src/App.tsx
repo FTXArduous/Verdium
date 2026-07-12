@@ -644,7 +644,7 @@ export default function App() {
                   <Text style={styles.orderTitle}>{document.label}</Text>
                   <Text style={styles.orderMeta}>{document.summary}</Text>
                   {document.imageUri ? (
-                    <Pressable onPress={() => Linking.openURL(document.imageUri)} style={styles.buttonMuted}>
+                    <Pressable onPress={() => document.imageUri && Linking.openURL(document.imageUri)} style={styles.buttonMuted}>
                       <Text style={styles.buttonText}>Open Document</Text>
                     </Pressable>
                   ) : null}
@@ -689,7 +689,7 @@ export default function App() {
                   </Text>
                 </View>
                 <Text style={styles.carouselCaption}>{driverPhotoLog[activeCarouselIndex]?.label}</Text>
-                <Pressable onPress={() => Linking.openURL(driverPhotoLog[activeCarouselIndex]?.imageUri)}>
+                <Pressable onPress={() => driverPhotoLog[activeCarouselIndex]?.imageUri && Linking.openURL(driverPhotoLog[activeCarouselIndex].imageUri)}>
                   <Text style={styles.carouselLink}>Open current photo</Text>
                 </Pressable>
               </View>
@@ -1018,6 +1018,31 @@ const styles = StyleSheet.create({
     color: '#05070a',
     fontWeight: '700',
     fontSize: 12,
+  },
+  sureCard: {
+    backgroundColor: '#0f1114',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    padding: 10,
+    gap: 8,
+    marginTop: 6,
+  },
+  sureCardAlt: {
+    backgroundColor: '#161a20',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 171, 255, 0.32)',
+    padding: 10,
+    gap: 8,
+    marginTop: 6,
+  },
+  sureTitle: {
+    color: '#f2f4f7',
+    fontWeight: '800',
+  },
+  sureBody: {
+    color: '#9ca5af',
   },
   carouselFrame: {
     position: 'relative',

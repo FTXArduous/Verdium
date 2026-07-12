@@ -8,7 +8,9 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "ignoreDeprecations": "5.0",
-    "rootDir": "."
+    "rootDir": ".",
+    "skipLibCheck": true
   },
-  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx"]
+  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx"],
+  "exclude": ["**/node_modules", "**/dist", "dist-web", "release"]
 }
