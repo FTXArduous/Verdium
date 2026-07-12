@@ -23,6 +23,30 @@ export type CustomerDeliveryRecord = {
   deliveredAt: string;
 };
 
+export type ProfileDocument = {
+  kind: 'license' | 'insurance' | 'delivery-data' | 'vehicle-id' | 'payment';
+  label: string;
+  summary: string;
+  imageUri?: string;
+};
+
+export type ProfileRecord = {
+  id?: string;
+  email: string;
+  password: string;
+  displayName: string;
+  role: 'customer' | 'driver' | 'admin';
+  storeLocation?: string;
+  licenseImageUri?: string;
+  insuranceImageUri?: string;
+  deliveryImageUri?: string;
+  vehicleImageUri?: string;
+  deliveryData?: string;
+  documents: ProfileDocument[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 function resolveBaseUrl(baseUrl?: string) {
   const maybeGlobal = globalThis as {
     process?: { env?: Record<string, string | undefined> };
@@ -33,7 +57,8 @@ function resolveBaseUrl(baseUrl?: string) {
   const resolved = String(baseUrl || envUrl || '').trim().replace(/\/$/, '');
 
   if (!resolved) {
-    throw new Error('VERDIUM API base URL is not configured. Set EXPO_PUBLIC_VERDIUM_API_BASE_URL.');
+    // Keep release builds from crashing on startup if env injection is missing.
+    return 'http://localhost:4010';
   }
 
   return resolved;
@@ -53,8 +78,10 @@ export type CustomerRequestRecord = {
   hashSerial: string;
   qrToken: string;
   createdAt: string;
-  status: 'pending' | 'dispatched';
+  status: 'pending' | 'confirmed' | 'pushed' | 'dispatched' | 'cancelled' | 'denied';
   dispatchedTo?: string;
+  confirmedDriverId?: string;
+  hashLocked?: boolean;
 };
 
 export type DriverNotification = {
@@ -65,6 +92,30 @@ export type DriverNotification = {
   address: string;
   createdAt: string;
   closed: boolean;
+};
+
+export type DriverPhotoArchiveEntry = {
+  phase: 'before-trip' | 'during-trip';
+  label: string;
+  imageUri: string;
+  createdAt: string;
+};
+
+export type DriverPhotoArchiveSubmission = {
+  driverId: string;
+  sessionId: string;
+  photos: DriverPhotoArchiveEntry[];
+};
+
+export type ProfileImageUploadRequest = {
+  imageBase64: string;
+  mimeType: string;
+  fileName?: string;
+  folder?: string;
+};
+
+export type ProfileImageUploadResponse = {
+  imageUri: string;
 };
 
 export async function submitDeliveryCompletionToServer(
@@ -105,6 +156,49 @@ export async function fetchCustomerDeliveriesFromServer(baseUrl?: string): Promi
   return payload.deliveries as CustomerDeliveryRecord[];
 }
 
+export async function fetchProfilesFromServer(baseUrl?: string, email?: string): Promise<ProfileRecord[]> {
+  const query = email ? `?email=${encodeURIComponent(email)}` : '';
+  const response = await fetch(`${resolveBaseUrl(baseUrl)}/api/profiles${query}`);
+  if (!response.ok) {
+    throw new Error(`profile fetch failed with status ${response.status}`);
+  }
+  const payload = await response.json();
+  return payload.profiles as ProfileRecord[];
+}
+
+export async function saveProfileToServer(profile: ProfileRecord, baseUrl?: string): Promise<ProfileRecord> {
+  const response = await fetch(`${resolveBaseUrl(baseUrl)}/api/profiles`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(profile),
+  });
+  if (!response.ok) {
+    throw new Error(`profile save failed with status ${response.status}`);
+  }
+  const payload = await response.json();
+  return payload.profile as ProfileRecord;
+}
+
+export async function uploadProfileImageToServer(
+  upload: ProfileImageUploadRequest,
+  baseUrl?: string
+): Promise<ProfileImageUploadResponse> {
+  const response = await fetch(`${resolveBaseUrl(baseUrl)}/api/uploads/profile-image`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(upload),
+  });
+  if (!response.ok) {
+    throw new Error(`profile image upload failed with status ${response.status}`);
+  }
+  const payload = await response.json();
+  return payload as ProfileImageUploadResponse;
+}
+
 export async function submitCustomerRequestToServer(
   request: CustomerRequestSubmission,
   baseUrl?: string
@@ -121,6 +215,34 @@ export async function submitCustomerRequestToServer(
   }
   const payload = await response.json();
   return payload.request as CustomerRequestRecord;
+}
+
+export async function fetchCustomerRequestsFromServer(customerId: string, baseUrl?: string): Promise<CustomerRequestRecord[]> {
+  const response = await fetch(
+    `${resolveBaseUrl(baseUrl)}/api/requests/customer?customerId=${encodeURIComponent(customerId)}`
+  );
+  if (!response.ok) {
+    throw new Error(`customer request fetch failed with status ${response.status}`);
+  }
+  const payload = await response.json();
+  return payload.requests as CustomerRequestRecord[];
+}
+
+export async function cancelCustomerRequestToServer(
+  requestId: string,
+  customerId: string,
+  baseUrl?: string
+): Promise<void> {
+  const response = await fetch(`${resolveBaseUrl(baseUrl)}/api/requests/customer/cancel`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ requestId, customerId }),
+  });
+  if (!response.ok) {
+    throw new Error(`customer cancel failed with status ${response.status}`);
+  }
 }
 
 export async function fetchAdminRequestsFromServer(baseUrl?: string): Promise<CustomerRequestRecord[]> {
@@ -264,5 +386,22 @@ export async function closeDriverNotification(notificationId: string, baseUrl?: 
   });
   if (!response.ok) {
     throw new Error(`notification close failed with status ${response.status}`);
+  }
+}
+
+export async function archiveDriverPhotosToServer(
+  submission: DriverPhotoArchiveSubmission,
+  baseUrl?: string
+): Promise<void> {
+  const response = await fetch(`${resolveBaseUrl(baseUrl)}/api/driver/photo-archive`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(submission),
+  });
+
+  if (!response.ok) {
+    throw new Error(`photo archive failed with status ${response.status}`);
   }
 }

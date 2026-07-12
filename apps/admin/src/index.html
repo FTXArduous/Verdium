@@ -7,13 +7,13 @@
     <style>
       :root {
         color-scheme: dark;
-        --bg: #14181c;
-        --surface: #1b2127;
-        --panel: #20272e;
+        --bg: #0f1114;
+        --surface: #171b20;
+        --panel: #1e242b;
         --text: #f6f8fa;
-        --muted: #9fb2bf;
-        --accent: #39d6c3;
-        --accent-soft: rgba(57, 214, 195, 0.16);
+        --muted: #9ca5af;
+        --accent: #63abff;
+        --accent-soft: rgba(99, 171, 255, 0.18);
       }
 
       * { box-sizing: border-box; }
@@ -60,7 +60,7 @@
         border-radius: 14px;
         padding: 14px 16px;
         background: var(--accent);
-        color: #06110f;
+        color: #05070a;
         font-weight: 700;
         cursor: pointer;
       }
@@ -98,7 +98,7 @@
         cursor: pointer;
       }
       .tab-btn.active {
-        background: rgba(57,214,195,0.16);
+        background: rgba(99,171,255,0.18);
         border-color: var(--accent);
         color: var(--accent);
       }
@@ -117,6 +117,118 @@
       .invoice-totals { margin-top: 18px; padding: 14px; background: var(--panel); border-radius: 14px; }
       .invoice-totals p { margin: 4px 0; }
       .accent { color: var(--accent); font-weight: 700; }
+      .map-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 14px;
+        margin-top: 16px;
+      }
+      .map-card {
+        background: var(--panel);
+        border: 1px solid rgba(99, 171, 255, 0.18);
+        border-radius: 16px;
+        overflow: hidden;
+      }
+      .map-card img {
+        display: block;
+        width: 100%;
+        height: 180px;
+        object-fit: cover;
+        background: #0f1316;
+      }
+      .map-card-body {
+        padding: 12px;
+      }
+      .map-card-title {
+        margin: 0 0 6px;
+        font-weight: 700;
+      }
+      .map-card-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .map-card-link {
+        display: inline-block;
+        margin-top: 10px;
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 12px;
+      }
+      .profile-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 14px;
+        margin-top: 16px;
+      }
+      .profile-card {
+        background: var(--panel);
+        border: 1px solid rgba(99, 171, 255, 0.18);
+        border-radius: 16px;
+        padding: 14px;
+      }
+      .profile-card h3 { margin: 0 0 6px; }
+      .profile-doc-grid {
+        display: grid;
+        gap: 10px;
+        margin-top: 10px;
+      }
+      .profile-doc {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(57, 214, 195, 0.12);
+        border-radius: 14px;
+        padding: 12px;
+      }
+      .profile-doc button { margin-top: 10px; }
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(6, 16, 15, 0.78);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        z-index: 20;
+      }
+      .modal-backdrop.active { display: flex; }
+      .modal-window {
+        width: min(980px, 100%);
+        max-height: min(88vh, 920px);
+        overflow: auto;
+        background: var(--surface);
+        border: 1px solid var(--accent-soft);
+        border-radius: 22px;
+        padding: 20px;
+        box-shadow: 0 30px 90px rgba(0,0,0,0.45);
+      }
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .modal-doc-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 14px;
+      }
+      .modal-doc-card {
+        background: var(--panel);
+        border-radius: 16px;
+        border: 1px solid rgba(99, 171, 255, 0.18);
+        padding: 14px;
+      }
+      .modal-doc-card img {
+        width: 100%;
+        height: 180px;
+        object-fit: cover;
+        border-radius: 12px;
+        background: #0f1316;
+        margin-top: 10px;
+      }
     </style>
   </head>
   <body>
@@ -128,10 +240,11 @@
 
       <section class="card login-box" id="loginCard">
         <h2>Admin Login</h2>
-        <p>Verdium Admin requires a separate administrator login before forms, logs, or handoff controls are available.</p>
+        <p>Verdium Admin requires a terminal administrator profile with a license photo before forms, logs, or handoff controls are available.</p>
         <input id="emailInput" type="email" placeholder="admin@verdium.example" />
         <input id="passwordInput" type="password" placeholder="Password" />
         <button id="loginButton">Sign In</button>
+        <button id="openTerminalProfileButton" style="margin-top:8px;background:var(--panel)">Create Terminal Profile</button>
         <div id="loginError" class="error"></div>
       </section>
 
@@ -142,6 +255,8 @@
           <button class="tab-btn" data-tab="deliveries">Delivery Feed</button>
           <button class="tab-btn" data-tab="invoices">Verdium Owner</button>
           <button class="tab-btn" data-tab="driverlogins">Driver Logins</button>
+          <button class="tab-btn" data-tab="profilevault">Profile Vault</button>
+          <button class="tab-btn" data-tab="terminalsettings">Terminal Settings</button>
           <button class="tab-btn" data-tab="cancellog">Cancel Log</button>
         </div>
 
@@ -207,6 +322,12 @@
               <button id="refreshDeliveries">Refresh Feed</button>
               <div id="deliveryFeed" class="log">No persisted deliveries loaded yet.</div>
             </section>
+            <section class="card" style="grid-column:1/-1">
+              <h2>Delivery Satellite Map</h2>
+              <p>Each completed delivery is previewed here with Google satellite imagery for the PC dashboard.</p>
+              <div id="deliveryMapNotice" class="log">Waiting for delivery data.</div>
+              <div id="deliveryMapGrid" class="map-grid"></div>
+            </section>
           </div>
         </div>
 
@@ -250,7 +371,107 @@
             </section>
           </div>
         </div>
+
+        <div class="tab-panel" id="tab-profilevault">
+          <div class="grid" style="margin-top:16px">
+            <section class="card" style="grid-column:1/-1">
+              <h2>Profile Vault</h2>
+              <p>Create email-based logins and open license, insurance, and delivery-data cards inside the admin window.</p>
+              <div class="grid">
+                <input id="profileEmail" type="email" placeholder="profile@verdium.example" />
+                <input id="profilePassword" type="password" placeholder="Password" />
+                <input id="profileDisplayName" type="text" placeholder="Display name" />
+                <select id="profileRole">
+                  <option value="customer">Customer</option>
+                  <option value="driver">Driver</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <select id="profileStoreLocation"></select>
+                <input id="profileLicenseUri" type="text" placeholder="License image URL" />
+                <input id="profileLicenseFile" type="file" accept="image/*" />
+                <button id="uploadProfileLicenseButton" type="button">Upload License Photo</button>
+                <input id="profileInsuranceUri" type="text" placeholder="Insurance image URL" />
+                <input id="profileInsuranceFile" type="file" accept="image/*" />
+                <button id="uploadProfileInsuranceButton" type="button">Upload Insurance Photo</button>
+                <input id="profileVehicleUri" type="text" placeholder="Vehicle ID image URL" />
+                <input id="profileVehicleFile" type="file" accept="image/*" />
+                <button id="uploadProfileVehicleButton" type="button">Upload Vehicle Photo</button>
+                <input id="profileDeliveryUri" type="text" placeholder="Delivery image URL" />
+                <input id="profileDeliveryFile" type="file" accept="image/*" />
+                <button id="uploadProfileDeliveryButton" type="button">Upload Delivery Photo</button>
+              </div>
+              <textarea id="profileDeliveryData" placeholder="Delivery data, notes, or verification details"></textarea>
+              <button id="saveProfileButton">Create Login</button>
+              <button id="refreshProfilesButton" style="margin-left:8px">Refresh Profiles</button>
+              <div id="profileVaultFeed" class="log">No profiles loaded yet.</div>
+              <div id="profileVaultGrid" class="profile-grid"></div>
+            </section>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="tab-terminalsettings">
+          <div class="grid" style="margin-top:16px">
+            <section class="card" style="grid-column:1/-1">
+              <h2>Terminal Settings</h2>
+              <p>Terminal profile location is used in the profile hierarchy for admin, driver, and client routing.</p>
+              <div class="grid">
+                <input id="terminalProfileEmail" type="email" placeholder="Signed-in terminal email" readonly />
+                <select id="terminalStoreLocation"></select>
+              </div>
+              <button id="saveTerminalSettingsButton">Save Terminal Location</button>
+              <div id="terminalSettingsFeed" class="log">Sign in with a terminal profile to edit settings.</div>
+            </section>
+          </div>
+        </div>
       </main>
+    </div>
+
+    <div class="modal-backdrop" id="profileModalBackdrop">
+      <div class="modal-window">
+        <div class="modal-header">
+          <div>
+            <h2 id="profileModalTitle" style="margin:0">Profile Documents</h2>
+            <p id="profileModalSubtitle" style="margin:6px 0 0;color:var(--muted)">Select a document card to inspect.</p>
+          </div>
+          <button id="closeProfileModal">Close</button>
+        </div>
+        <div id="profileModalCards" class="modal-doc-grid"></div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="terminalProfileBackdrop">
+      <div class="modal-window">
+        <div class="modal-header">
+          <div>
+            <h2 style="margin:0">Create Terminal Profile</h2>
+            <p style="margin:6px 0 0;color:var(--muted)">License photo and store location are mandatory before terminal sign in.</p>
+          </div>
+          <button id="closeTerminalProfileModal">Close</button>
+        </div>
+        <div class="grid">
+          <input id="terminalCreateEmail" type="email" placeholder="terminal@verdium.example" />
+          <input id="terminalCreatePassword" type="password" placeholder="Password" />
+          <input id="terminalCreateDisplayName" type="text" placeholder="Terminal display name" />
+          <select id="terminalCreateLocation"></select>
+          <input id="terminalCreateLicenseUri" type="text" placeholder="License image URL (required)" />
+          <input id="terminalCreateLicenseFile" type="file" accept="image/*" />
+          <button id="uploadTerminalLicenseButton" type="button">Upload Terminal License</button>
+          <input id="terminalCreateInsuranceUri" type="text" placeholder="Insurance image URL" />
+          <input id="terminalCreateInsuranceFile" type="file" accept="image/*" />
+          <button id="uploadTerminalInsuranceButton" type="button">Upload Terminal Insurance</button>
+          <input id="terminalCreateVehicleUri" type="text" placeholder="Vehicle ID image URL" />
+          <input id="terminalCreateVehicleFile" type="file" accept="image/*" />
+          <button id="uploadTerminalVehicleButton" type="button">Upload Terminal Vehicle</button>
+          <input id="terminalCreateDeliveryUri" type="text" placeholder="Delivery image URL" />
+          <input id="terminalCreateDeliveryFile" type="file" accept="image/*" />
+          <button id="uploadTerminalDeliveryButton" type="button">Upload Terminal Delivery</button>
+        </div>
+        <textarea id="terminalCreateDeliveryData" placeholder="Terminal delivery notes or verification details"></textarea>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button id="saveTerminalProfileButton">Save Terminal Profile</button>
+        </div>
+        <div id="terminalProfileFeed" class="log" style="margin-top:12px">Create a terminal profile to unlock sign in.</div>
+      </div>
     </div>
 
     <script>
@@ -259,11 +480,154 @@
       const loginError = document.getElementById('loginError');
       const log = document.getElementById('syncLog');
       const deliveryFeed = document.getElementById('deliveryFeed');
+      const deliveryMapGrid = document.getElementById('deliveryMapGrid');
+      const deliveryMapNotice = document.getElementById('deliveryMapNotice');
       const requestFeed = document.getElementById('requestFeed');
       const verifyState = document.getElementById('verifyState');
       const hashInput = document.getElementById('hashInput');
+      const profileVaultFeed = document.getElementById('profileVaultFeed');
+      const profileVaultGrid = document.getElementById('profileVaultGrid');
+      const profileModalBackdrop = document.getElementById('profileModalBackdrop');
+      const profileModalTitle = document.getElementById('profileModalTitle');
+      const profileModalSubtitle = document.getElementById('profileModalSubtitle');
+      const profileModalCards = document.getElementById('profileModalCards');
+      const profileEmail = document.getElementById('profileEmail');
+      const profilePassword = document.getElementById('profilePassword');
+      const profileDisplayName = document.getElementById('profileDisplayName');
+      const profileRole = document.getElementById('profileRole');
+      const profileStoreLocation = document.getElementById('profileStoreLocation');
+      const profileLicenseUri = document.getElementById('profileLicenseUri');
+      const profileLicenseFile = document.getElementById('profileLicenseFile');
+      const uploadProfileLicenseButton = document.getElementById('uploadProfileLicenseButton');
+      const profileInsuranceUri = document.getElementById('profileInsuranceUri');
+      const profileInsuranceFile = document.getElementById('profileInsuranceFile');
+      const uploadProfileInsuranceButton = document.getElementById('uploadProfileInsuranceButton');
+      const profileVehicleUri = document.getElementById('profileVehicleUri');
+      const profileVehicleFile = document.getElementById('profileVehicleFile');
+      const uploadProfileVehicleButton = document.getElementById('uploadProfileVehicleButton');
+      const profileDeliveryUri = document.getElementById('profileDeliveryUri');
+      const profileDeliveryFile = document.getElementById('profileDeliveryFile');
+      const uploadProfileDeliveryButton = document.getElementById('uploadProfileDeliveryButton');
+      const profileDeliveryData = document.getElementById('profileDeliveryData');
+      const openTerminalProfileButton = document.getElementById('openTerminalProfileButton');
+      const terminalProfileBackdrop = document.getElementById('terminalProfileBackdrop');
+      const closeTerminalProfileModal = document.getElementById('closeTerminalProfileModal');
+      const terminalCreateEmail = document.getElementById('terminalCreateEmail');
+      const terminalCreatePassword = document.getElementById('terminalCreatePassword');
+      const terminalCreateDisplayName = document.getElementById('terminalCreateDisplayName');
+      const terminalCreateLocation = document.getElementById('terminalCreateLocation');
+      const terminalCreateLicenseUri = document.getElementById('terminalCreateLicenseUri');
+      const terminalCreateLicenseFile = document.getElementById('terminalCreateLicenseFile');
+      const uploadTerminalLicenseButton = document.getElementById('uploadTerminalLicenseButton');
+      const terminalCreateInsuranceUri = document.getElementById('terminalCreateInsuranceUri');
+      const terminalCreateInsuranceFile = document.getElementById('terminalCreateInsuranceFile');
+      const uploadTerminalInsuranceButton = document.getElementById('uploadTerminalInsuranceButton');
+      const terminalCreateVehicleUri = document.getElementById('terminalCreateVehicleUri');
+      const terminalCreateVehicleFile = document.getElementById('terminalCreateVehicleFile');
+      const uploadTerminalVehicleButton = document.getElementById('uploadTerminalVehicleButton');
+      const terminalCreateDeliveryUri = document.getElementById('terminalCreateDeliveryUri');
+      const terminalCreateDeliveryFile = document.getElementById('terminalCreateDeliveryFile');
+      const uploadTerminalDeliveryButton = document.getElementById('uploadTerminalDeliveryButton');
+      const terminalCreateDeliveryData = document.getElementById('terminalCreateDeliveryData');
+      const terminalProfileFeed = document.getElementById('terminalProfileFeed');
+      const terminalProfileEmail = document.getElementById('terminalProfileEmail');
+      const terminalStoreLocation = document.getElementById('terminalStoreLocation');
+      const terminalSettingsFeed = document.getElementById('terminalSettingsFeed');
       let cacheApiBaseUrl = '';
+      let cacheGoogleMapsApiKey = '';
       const drivers = ['driver-1', 'driver-2', 'driver-3'];
+      const virginiaLocations = [
+        'Williamsburg',
+        'Norfolk',
+        'Richmond',
+        'Colonial Heights',
+        'Dinwiddie',
+        'Blacksburg',
+        'Alexandria',
+        'Fredericksburg',
+        'Chesapeake',
+        'Virginia Beach',
+        'Newport News',
+        'Hampton',
+        'Petersburg',
+        'Midlothian',
+        'Arlington',
+        'Fairfax',
+        'Roanoke',
+      ];
+      let cachedProfiles = [];
+      let currentAdminProfile = null;
+      const requestCancelStages = {};
+
+      const normalizeLocation = (value) => {
+        const clean = String(value || '').trim();
+        return virginiaLocations.includes(clean) ? clean : virginiaLocations[0];
+      };
+
+      const fillLocationSelect = (selectElement, selectedValue) => {
+        if (!selectElement) return;
+        const chosen = normalizeLocation(selectedValue);
+        selectElement.innerHTML = '';
+        virginiaLocations.forEach((location) => {
+          const option = document.createElement('option');
+          option.value = location;
+          option.textContent = location;
+          if (location === chosen) {
+            option.selected = true;
+          }
+          selectElement.appendChild(option);
+        });
+      };
+
+      const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('file-read-failed'));
+        reader.readAsDataURL(file);
+      });
+
+      const uploadSelectedImage = async ({ fileInput, targetInput, statusSink, folder }) => {
+        if (!(await ensureApiBaseUrl())) {
+          statusSink.textContent = 'VERDIUM_API_BASE_URL is not configured for upload.';
+          return;
+        }
+        const file = fileInput?.files?.[0];
+        if (!file) {
+          statusSink.textContent = 'Select an image file before upload.';
+          return;
+        }
+
+        const dataUrl = await readFileAsDataUrl(file);
+        const parts = dataUrl.split(',', 2);
+        const meta = parts[0] || '';
+        const imageBase64 = parts[1] || '';
+        const mimeMatch = meta.match(/^data:(.+);base64$/i);
+        const mimeType = mimeMatch ? mimeMatch[1] : (file.type || 'image/jpeg');
+        if (!imageBase64) {
+          throw new Error('invalid-image-data');
+        }
+
+        const response = await fetch(`${cacheApiBaseUrl}/api/uploads/profile-image`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageBase64,
+            mimeType,
+            fileName: file.name || `profile-${Date.now()}.jpg`,
+            folder,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`upload failed ${response.status}`);
+        }
+        const payload = await response.json();
+        targetInput.value = String(payload.imageUri || '').trim();
+        statusSink.textContent = `Uploaded ${file.name}.`;
+      };
+
+      fillLocationSelect(profileStoreLocation, virginiaLocations[0]);
+      fillLocationSelect(terminalCreateLocation, virginiaLocations[0]);
+      fillLocationSelect(terminalStoreLocation, virginiaLocations[0]);
       const appendLog = async (message) => {
         log.textContent = `${new Date().toLocaleTimeString()} - ${message}\n${log.textContent}`;
         if (window.verdiumAdmin) {
@@ -280,12 +644,54 @@
         }
         const config = await window.verdiumAdmin.getConfig();
         cacheApiBaseUrl = String((config && config.apiBaseUrl) || '').trim().replace(/\/$/, '');
+        cacheGoogleMapsApiKey = String((config && config.googleMapsApiKey) || '').trim();
         return Boolean(cacheApiBaseUrl);
+      };
+
+      const buildDeliveryMapUrl = (address) => {
+        const mapQuery = encodeURIComponent(address || '');
+        if (cacheGoogleMapsApiKey) {
+          return `https://maps.googleapis.com/maps/api/staticmap?size=640x360&scale=2&zoom=18&maptype=satellite&center=${mapQuery}&markers=color:red%7C${mapQuery}&key=${cacheGoogleMapsApiKey}`;
+        }
+
+        return `https://www.google.com/maps?q=${mapQuery}&t=k&z=18&output=embed`;
+      };
+
+      const renderDeliveryMaps = (rows) => {
+        deliveryMapGrid.innerHTML = '';
+        if (!cacheGoogleMapsApiKey) {
+          deliveryMapNotice.textContent = 'VERDIUM_GOOGLE_MAPS_API_KEY is not configured. Add it to show satellite previews on PC.';
+          return;
+        }
+
+        if (rows.length === 0) {
+          deliveryMapNotice.textContent = 'No deliveries yet.';
+          return;
+        }
+
+        deliveryMapNotice.textContent = `${rows.length} delivery map${rows.length === 1 ? '' : 's'} loaded.`;
+        rows.forEach((row) => {
+          const card = document.createElement('article');
+          card.className = 'map-card';
+          const mapUrl = buildDeliveryMapUrl(row.address);
+          const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(row.address || '')}`;
+          card.innerHTML = `
+            <img src="${mapUrl}" alt="Satellite map for ${row.address || row.orderId}" />
+            <div class="map-card-body">
+              <p class="map-card-title">${row.orderId}</p>
+              <p class="map-card-meta">${row.address || 'No address provided'}</p>
+              <p class="map-card-meta">${row.deliveredAt ? new Date(row.deliveredAt).toLocaleString() : 'Pending delivery time'}</p>
+              <a class="map-card-link" href="${googleMapsUrl}" target="_blank" rel="noreferrer">Open in Google Maps</a>
+            </div>
+          `;
+          deliveryMapGrid.appendChild(card);
+        });
       };
 
       const refreshDeliveries = async () => {
         if (!(await ensureApiBaseUrl())) {
           deliveryFeed.textContent = 'VERDIUM_API_BASE_URL is not configured for Verdium Admin.';
+          deliveryMapNotice.textContent = 'VERDIUM_API_BASE_URL is not configured for Verdium Admin.';
           return;
         }
         try {
@@ -295,6 +701,7 @@
           }
           const payload = await response.json();
           const rows = payload.deliveries || [];
+          renderDeliveryMaps(rows);
           if (rows.length === 0) {
             deliveryFeed.textContent = 'No deliveries yet.';
             return;
@@ -304,6 +711,8 @@
             .join('\n');
         } catch (error) {
           deliveryFeed.textContent = `Unable to reach server-cache at ${cacheApiBaseUrl}: ${String(error)}`;
+          deliveryMapNotice.textContent = `Unable to reach server-cache at ${cacheApiBaseUrl}: ${String(error)}`;
+          deliveryMapGrid.innerHTML = '';
         }
       };
 
@@ -385,18 +794,26 @@
       document.getElementById('loginButton').addEventListener('click', async () => {
         const email = document.getElementById('emailInput').value;
         const password = document.getElementById('passwordInput').value;
-        const ok = window.verdiumAdmin ? await window.verdiumAdmin.login({ email, password }) : false;
-        if (ok) {
+        const result = window.verdiumAdmin
+          ? await window.verdiumAdmin.login({ email, password })
+          : { ok: false, profile: null, reason: 'Admin bridge unavailable.' };
+        if (result && result.ok) {
+          currentAdminProfile = result.profile || null;
           loginError.textContent = '';
           loginCard.classList.add('hidden');
           dashboard.classList.remove('hidden');
+          terminalProfileEmail.value = String(currentAdminProfile?.email || '').trim().toLowerCase();
+          fillLocationSelect(terminalStoreLocation, normalizeLocation(currentAdminProfile?.storeLocation));
+          terminalSettingsFeed.textContent = currentAdminProfile
+            ? `Signed in as ${currentAdminProfile.email}.`
+            : 'Signed in.';
           await appendLog('admin-login-success');
           await refreshDeliveries();
           await refreshRequests();
           await refreshPings();
           await refreshCancelLog();
         } else {
-          loginError.textContent = 'Invalid admin credentials.';
+          loginError.textContent = (result && result.reason) || 'Invalid admin credentials.';
           await appendLog('admin-login-failure');
         }
       });
@@ -430,11 +847,11 @@
           }
           rows.forEach((row) => {
             const wrap = document.createElement('div');
-            wrap.style.cssText = 'margin-bottom:18px;border:1px solid rgba(57,214,195,0.16);border-radius:14px;padding:14px';
-            const statusColor = row.status === 'confirmed' ? '#39d6c3' : row.status === 'pushed' ? '#8ef0df' : '#9fb2bf';
+            wrap.style.cssText = 'margin-bottom:18px;border:1px solid rgba(99,171,255,0.18);border-radius:14px;padding:14px';
+            const statusColor = row.status === 'confirmed' ? '#63abff' : row.status === 'pushed' ? '#c7dcff' : '#9ca5af';
             wrap.innerHTML = `
               <div><strong>${row.id}</strong> <span style="color:${statusColor};font-size:11px">${row.status}</span></div>
-              <div style="color:#9fb2bf;font-size:12px;margin:4px 0">Hash: ${row.hashSerial ? row.hashSerial.slice(0,8)+'…' : 'n/a'} | QR: ${row.qrToken || 'n/a'}</div>
+              <div style="color:#9ca5af;font-size:12px;margin:4px 0">Hash: ${row.hashSerial ? row.hashSerial.slice(0,8)+'…' : 'n/a'} | QR: ${row.qrToken || 'n/a'}</div>
             `;
 
             const controls = document.createElement('div');
@@ -443,7 +860,7 @@
             if (row.status === 'pending') {
               // Confirm: select driver then confirm
               const sel = document.createElement('select');
-              sel.style.cssText = 'background:#20272e;color:#f6f8fa;border:1px solid rgba(57,214,195,0.3);border-radius:10px;padding:8px 10px';
+              sel.style.cssText = 'background:#1e242b;color:#f6f8fa;border:1px solid rgba(99,171,255,0.3);border-radius:10px;padding:8px 10px';
               drivers.forEach((d) => {
                 const opt = document.createElement('option');
                 opt.value = d;
@@ -454,7 +871,7 @@
 
               const btnConfirm = document.createElement('button');
               btnConfirm.textContent = 'Confirm Delivery';
-              btnConfirm.style.cssText = 'background:#39d6c3;color:#06110f;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+              btnConfirm.style.cssText = 'background:#63abff;color:#05070a;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
               btnConfirm.addEventListener('click', async () => {
                 try {
                   await postAdmin('/api/requests/admin/confirm', { requestId: row.id, driverId: sel.value });
@@ -466,7 +883,7 @@
 
               const btnDeny = document.createElement('button');
               btnDeny.textContent = 'Deny';
-              btnDeny.style.cssText = 'background:#2e1a1a;color:#f06a6a;border:1px solid #f06a6a;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+              btnDeny.style.cssText = 'background:#b6c0cb;color:#d46a6a;border:1px solid #d46a6a;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
               btnDeny.addEventListener('click', async () => {
                 try {
                   await postAdmin('/api/requests/admin/deny', { requestId: row.id });
@@ -479,13 +896,13 @@
 
             if (row.status === 'confirmed') {
               const info = document.createElement('span');
-              info.style.color = '#9fb2bf';
+              info.style.color = '#9ca5af';
               info.textContent = `Driver: ${row.confirmedDriverId}`;
               controls.appendChild(info);
 
               const btnPush = document.createElement('button');
               btnPush.textContent = `Add Delivery → ${row.confirmedDriverId}`;
-              btnPush.style.cssText = 'background:#39d6c3;color:#06110f;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+              btnPush.style.cssText = 'background:#63abff;color:#05070a;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
               btnPush.addEventListener('click', async () => {
                 try {
                   await postAdmin('/api/requests/admin/push', { requestId: row.id });
@@ -495,38 +912,114 @@
               });
               controls.appendChild(btnPush);
 
-              const btnCancel = document.createElement('button');
-              btnCancel.textContent = 'Cancel Delivery';
-              btnCancel.style.cssText = 'background:#2e1a1a;color:#f06a6a;border:1px solid #f06a6a;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
-              btnCancel.addEventListener('click', async () => {
-                try {
-                  await postAdmin('/api/requests/admin/cancel', { requestId: row.id });
-                  await appendLog(`admin-cancelled:${row.id}`);
+              const cancelStage = requestCancelStages[row.id] || 0;
+              if (cancelStage > 0) {
+                const sureCard = document.createElement('div');
+                sureCard.className = 'profile-doc';
+                sureCard.style.minWidth = '280px';
+                sureCard.innerHTML = `
+                  <strong>Are you sure?</strong>
+                  <p style="margin:6px 0 0;color:var(--muted)">This will cancel the order and write the terminal cancel log.</p>
+                `;
+                const keepButton = document.createElement('button');
+                keepButton.textContent = 'Keep Order';
+                keepButton.style.cssText = 'margin-top:10px;background:#b6c0cb;color:#05070a;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+                keepButton.addEventListener('click', async () => {
+                  delete requestCancelStages[row.id];
                   await refreshRequests();
-                  await refreshCancelLog();
-                } catch (e) { await appendLog(`cancel-failed:${String(e)}`); }
-              });
-              controls.appendChild(btnCancel);
+                });
+                sureCard.appendChild(keepButton);
+                controls.appendChild(sureCard);
+
+                const sureCardTwo = document.createElement('div');
+                sureCardTwo.className = 'profile-doc';
+                sureCardTwo.style.minWidth = '280px';
+                sureCardTwo.innerHTML = `
+                  <strong>Are you sure you are sure?</strong>
+                  <p style="margin:6px 0 0;color:var(--muted)">Final confirmation is required before the cancel is logged.</p>
+                `;
+                const finalButton = document.createElement('button');
+                finalButton.textContent = 'Confirm Cancel Order';
+                finalButton.style.cssText = 'margin-top:10px;background:#63abff;color:#05070a;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+                finalButton.addEventListener('click', async () => {
+                  try {
+                    await postAdmin('/api/requests/admin/cancel', { requestId: row.id });
+                    delete requestCancelStages[row.id];
+                    await appendLog(`terminal-cancelled:${row.id}`);
+                    await refreshRequests();
+                    await refreshCancelLog();
+                  } catch (e) { await appendLog(`cancel-failed:${String(e)}`); }
+                });
+                sureCardTwo.appendChild(finalButton);
+                controls.appendChild(sureCardTwo);
+              } else {
+                const btnCancel = document.createElement('button');
+                btnCancel.textContent = 'Cancel Order';
+                btnCancel.style.cssText = 'background:#b6c0cb;color:#05070a;border:1px solid rgba(99,171,255,0.18);border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+                btnCancel.addEventListener('click', async () => {
+                  requestCancelStages[row.id] = 1;
+                  await refreshRequests();
+                });
+                controls.appendChild(btnCancel);
+              }
             }
 
             if (row.status === 'pushed') {
               const info = document.createElement('span');
-              info.style.color = '#39d6c3';
+              info.style.color = '#63abff';
               info.textContent = `Pushed to ${row.confirmedDriverId}`;
               controls.appendChild(info);
 
-              const btnCancel = document.createElement('button');
-              btnCancel.textContent = 'Cancel Delivery';
-              btnCancel.style.cssText = 'background:#2e1a1a;color:#f06a6a;border:1px solid #f06a6a;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
-              btnCancel.addEventListener('click', async () => {
-                try {
-                  await postAdmin('/api/requests/admin/cancel', { requestId: row.id });
-                  await appendLog(`admin-cancelled:${row.id}`);
+              const cancelStage = requestCancelStages[row.id] || 0;
+              if (cancelStage > 0) {
+                const sureCard = document.createElement('div');
+                sureCard.className = 'profile-doc';
+                sureCard.style.minWidth = '280px';
+                sureCard.innerHTML = `
+                  <strong>Are you sure?</strong>
+                  <p style="margin:6px 0 0;color:var(--muted)">This will cancel the order and write the terminal cancel log.</p>
+                `;
+                const keepButton = document.createElement('button');
+                keepButton.textContent = 'Keep Order';
+                keepButton.style.cssText = 'margin-top:10px;background:#b6c0cb;color:#05070a;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+                keepButton.addEventListener('click', async () => {
+                  delete requestCancelStages[row.id];
                   await refreshRequests();
-                  await refreshCancelLog();
-                } catch (e) { await appendLog(`cancel-failed:${String(e)}`); }
-              });
-              controls.appendChild(btnCancel);
+                });
+                sureCard.appendChild(keepButton);
+                controls.appendChild(sureCard);
+
+                const sureCardTwo = document.createElement('div');
+                sureCardTwo.className = 'profile-doc';
+                sureCardTwo.style.minWidth = '280px';
+                sureCardTwo.innerHTML = `
+                  <strong>Are you sure you are sure?</strong>
+                  <p style="margin:6px 0 0;color:var(--muted)">Final confirmation is required before the cancel is logged.</p>
+                `;
+                const finalButton = document.createElement('button');
+                finalButton.textContent = 'Confirm Cancel Order';
+                finalButton.style.cssText = 'margin-top:10px;background:#63abff;color:#05070a;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+                finalButton.addEventListener('click', async () => {
+                  try {
+                    await postAdmin('/api/requests/admin/cancel', { requestId: row.id });
+                    delete requestCancelStages[row.id];
+                    await appendLog(`terminal-cancelled:${row.id}`);
+                    await refreshRequests();
+                    await refreshCancelLog();
+                  } catch (e) { await appendLog(`cancel-failed:${String(e)}`); }
+                });
+                sureCardTwo.appendChild(finalButton);
+                controls.appendChild(sureCardTwo);
+              } else {
+                const btnCancel = document.createElement('button');
+                btnCancel.textContent = 'Cancel Order';
+                btnCancel.style.cssText = 'background:#b6c0cb;color:#05070a;border:1px solid rgba(99,171,255,0.18);border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
+                btnCancel.addEventListener('click', async () => {
+                  requestCancelStages[row.id] = 1;
+                  await refreshRequests();
+                });
+                controls.appendChild(btnCancel);
+              }
             }
 
             wrap.appendChild(controls);
@@ -652,7 +1145,365 @@
         }
       };
 
+      const profileDocuments = (profile) => [
+        { kind: 'license', label: 'License', summary: 'Driver or customer license card.', imageUri: profile.licenseImageUri || '' },
+        { kind: 'insurance', label: 'Insurance', summary: 'Insurance card and policy details.', imageUri: profile.insuranceImageUri || '' },
+        { kind: 'vehicle-id', label: 'Vehicle ID', summary: 'Vehicle identification and registration.', imageUri: profile.vehicleImageUri || '' },
+        { kind: 'delivery-data', label: 'Delivery Data', summary: profile.deliveryData || 'Delivery data and verification notes.', imageUri: profile.deliveryImageUri || '' },
+      ];
+
+      const openProfileModal = (profile) => {
+        const docs = profileDocuments(profile);
+        profileModalTitle.textContent = `${profile.displayName} documents`;
+        profileModalSubtitle.textContent = `${profile.email} · ${profile.role} · ${normalizeLocation(profile.storeLocation)}`;
+        profileModalCards.innerHTML = '';
+        docs.forEach((doc) => {
+          const card = document.createElement('section');
+          card.className = 'modal-doc-card';
+          card.innerHTML = `
+            <h3 style="margin:0 0 6px">${doc.label}</h3>
+            <p style="margin:0;color:var(--muted);line-height:1.5">${doc.summary}</p>
+          `;
+          if (doc.imageUri) {
+            const img = document.createElement('img');
+            img.src = doc.imageUri;
+            img.alt = `${profile.displayName} ${doc.label}`;
+            card.appendChild(img);
+          } else {
+            const note = document.createElement('p');
+            note.textContent = 'No image attached.';
+            note.style.color = 'var(--muted)';
+            note.style.marginTop = '10px';
+            card.appendChild(note);
+          }
+          profileModalCards.appendChild(card);
+        });
+        profileModalBackdrop.classList.add('active');
+      };
+
+      const closeProfileModal = () => {
+        profileModalBackdrop.classList.remove('active');
+      };
+
+      const renderProfiles = (profiles) => {
+        cachedProfiles = profiles;
+        profileVaultGrid.innerHTML = '';
+        if (profiles.length === 0) {
+          profileVaultFeed.textContent = 'No profiles created yet.';
+          return;
+        }
+
+        profileVaultFeed.textContent = `${profiles.length} profile${profiles.length === 1 ? '' : 's'} loaded.`;
+        profiles.forEach((profile) => {
+          const card = document.createElement('article');
+          card.className = 'profile-card';
+          const docs = profileDocuments(profile);
+          card.innerHTML = `
+            <h3>${profile.displayName}</h3>
+            <p style="margin:0;color:var(--muted)">${profile.email}</p>
+            <p style="margin:4px 0 0;color:var(--muted)">Role: ${profile.role}</p>
+            <p style="margin:4px 0 0;color:var(--muted)">Store: ${normalizeLocation(profile.storeLocation)}</p>
+            <div class="profile-doc-grid"></div>
+          `;
+          const docGrid = card.querySelector('.profile-doc-grid');
+          docs.forEach((doc) => {
+            const docCard = document.createElement('div');
+            docCard.className = 'profile-doc';
+            docCard.innerHTML = `
+              <strong>${doc.label}</strong>
+              <p style="margin:6px 0 0;color:var(--muted)">${doc.summary}</p>
+            `;
+            const openButton = document.createElement('button');
+            openButton.textContent = `Open ${doc.label}`;
+            openButton.addEventListener('click', () => openProfileModal(profile));
+            docCard.appendChild(openButton);
+            docGrid.appendChild(docCard);
+          });
+          profileVaultGrid.appendChild(card);
+        });
+      };
+
+      const refreshProfiles = async () => {
+        if (!(await ensureApiBaseUrl())) {
+          profileVaultFeed.textContent = 'VERDIUM_API_BASE_URL is not configured for Verdium Admin.';
+          return;
+        }
+        try {
+          const response = await fetch(`${cacheApiBaseUrl}/api/profiles`);
+          if (!response.ok) {
+            throw new Error(`status ${response.status}`);
+          }
+          const payload = await response.json();
+          renderProfiles(payload.profiles || []);
+        } catch (error) {
+          profileVaultFeed.textContent = `Unable to reach profile feed at ${cacheApiBaseUrl}: ${String(error)}`;
+          profileVaultGrid.innerHTML = '';
+        }
+      };
+
+      const saveProfile = async () => {
+        if (!(await ensureApiBaseUrl())) {
+          profileVaultFeed.textContent = 'VERDIUM_API_BASE_URL is not configured for Verdium Admin.';
+          return;
+        }
+        if (!profileEmail.value.trim() || !profilePassword.value.trim() || !profileLicenseUri.value.trim() || !profileStoreLocation.value.trim()) {
+          profileVaultFeed.textContent = 'Email, password, store location, and license image URL are required for every profile.';
+          return;
+        }
+        const body = {
+          email: profileEmail.value,
+          password: profilePassword.value,
+          displayName: profileDisplayName.value || profileEmail.value,
+          role: profileRole.value,
+          storeLocation: normalizeLocation(profileStoreLocation.value),
+          licenseImageUri: profileLicenseUri.value,
+          insuranceImageUri: profileInsuranceUri.value,
+          vehicleImageUri: profileVehicleUri.value,
+          deliveryImageUri: profileDeliveryUri.value,
+          deliveryData: profileDeliveryData.value,
+          documents: [
+            { kind: 'license', label: 'License', summary: 'License card stored for this profile.', imageUri: profileLicenseUri.value },
+            { kind: 'insurance', label: 'Insurance', summary: 'Insurance card stored for this profile.', imageUri: profileInsuranceUri.value },
+            { kind: 'vehicle-id', label: 'Vehicle ID', summary: 'Vehicle data stored for this profile.', imageUri: profileVehicleUri.value },
+            { kind: 'delivery-data', label: 'Delivery Data', summary: profileDeliveryData.value || 'Delivery details stored for this profile.', imageUri: profileDeliveryUri.value },
+          ],
+        };
+        const response = await fetch(`${cacheApiBaseUrl}/api/profiles`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+          throw new Error(`status ${response.status}`);
+        }
+        await refreshProfiles();
+        await appendLog(`profile-saved:${String(profileEmail.value || '').trim().toLowerCase()}`);
+      };
+
+      const openTerminalProfileModal = () => {
+        terminalProfileBackdrop.classList.add('active');
+        fillLocationSelect(terminalCreateLocation, normalizeLocation(terminalCreateLocation.value));
+      };
+
+      const closeTerminalProfile = () => {
+        terminalProfileBackdrop.classList.remove('active');
+      };
+
+      const saveTerminalProfile = async () => {
+        if (!(await ensureApiBaseUrl())) {
+          terminalProfileFeed.textContent = 'VERDIUM_API_BASE_URL is not configured for Verdium Admin.';
+          return;
+        }
+        if (!terminalCreateEmail.value.trim() || !terminalCreatePassword.value.trim() || !terminalCreateLicenseUri.value.trim()) {
+          terminalProfileFeed.textContent = 'Email, password, and license image URL are required for terminal profile creation.';
+          return;
+        }
+
+        const body = {
+          email: String(terminalCreateEmail.value || '').trim().toLowerCase(),
+          password: terminalCreatePassword.value,
+          displayName: terminalCreateDisplayName.value || terminalCreateEmail.value,
+          role: 'admin',
+          storeLocation: normalizeLocation(terminalCreateLocation.value),
+          licenseImageUri: terminalCreateLicenseUri.value,
+          insuranceImageUri: terminalCreateInsuranceUri.value,
+          vehicleImageUri: terminalCreateVehicleUri.value,
+          deliveryImageUri: terminalCreateDeliveryUri.value,
+          deliveryData: terminalCreateDeliveryData.value,
+          documents: [
+            { kind: 'license', label: 'License', summary: 'License card stored for this terminal profile.', imageUri: terminalCreateLicenseUri.value },
+            { kind: 'insurance', label: 'Insurance', summary: 'Insurance card stored for this terminal profile.', imageUri: terminalCreateInsuranceUri.value },
+            { kind: 'vehicle-id', label: 'Vehicle ID', summary: 'Vehicle data stored for this terminal profile.', imageUri: terminalCreateVehicleUri.value },
+            { kind: 'delivery-data', label: 'Delivery Data', summary: terminalCreateDeliveryData.value || 'Terminal delivery details stored for this profile.', imageUri: terminalCreateDeliveryUri.value },
+          ],
+        };
+
+        const response = await fetch(`${cacheApiBaseUrl}/api/profiles`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+          throw new Error(`status ${response.status}`);
+        }
+
+        document.getElementById('emailInput').value = body.email;
+        document.getElementById('passwordInput').value = body.password;
+        terminalProfileFeed.textContent = `Terminal profile created for ${body.email}. You can now sign in.`;
+        await appendLog(`terminal-profile-saved:${body.email}`);
+        await refreshProfiles();
+      };
+
+      const saveTerminalSettings = async () => {
+        if (!(await ensureApiBaseUrl())) {
+          terminalSettingsFeed.textContent = 'VERDIUM_API_BASE_URL is not configured for Verdium Admin.';
+          return;
+        }
+        if (!currentAdminProfile || !currentAdminProfile.email) {
+          terminalSettingsFeed.textContent = 'Sign in with a terminal profile first.';
+          return;
+        }
+
+        const updated = {
+          ...currentAdminProfile,
+          role: 'admin',
+          storeLocation: normalizeLocation(terminalStoreLocation.value),
+          documents: Array.isArray(currentAdminProfile.documents) ? currentAdminProfile.documents : [],
+          licenseImageUri: String(currentAdminProfile.licenseImageUri || '').trim(),
+        };
+
+        if (!updated.licenseImageUri) {
+          terminalSettingsFeed.textContent = 'A license image is required before terminal sign in and settings updates.';
+          return;
+        }
+
+        const response = await fetch(`${cacheApiBaseUrl}/api/profiles`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updated),
+        });
+        if (!response.ok) {
+          throw new Error(`status ${response.status}`);
+        }
+
+        currentAdminProfile = updated;
+        terminalSettingsFeed.textContent = `Terminal location saved as ${updated.storeLocation}.`;
+        await appendLog(`terminal-settings-location:${updated.email}:${updated.storeLocation}`);
+        await refreshProfiles();
+      };
+
       document.getElementById('refreshPings').addEventListener('click', refreshPings);
+      document.getElementById('refreshProfilesButton').addEventListener('click', refreshProfiles);
+      uploadProfileLicenseButton.addEventListener('click', async () => {
+        try {
+          await uploadSelectedImage({
+            fileInput: profileLicenseFile,
+            targetInput: profileLicenseUri,
+            statusSink: profileVaultFeed,
+            folder: `profiles/${profileRole.value || 'customer'}/license`,
+          });
+        } catch (error) {
+          profileVaultFeed.textContent = `License upload failed: ${String(error)}`;
+        }
+      });
+      uploadProfileInsuranceButton.addEventListener('click', async () => {
+        try {
+          await uploadSelectedImage({
+            fileInput: profileInsuranceFile,
+            targetInput: profileInsuranceUri,
+            statusSink: profileVaultFeed,
+            folder: `profiles/${profileRole.value || 'customer'}/insurance`,
+          });
+        } catch (error) {
+          profileVaultFeed.textContent = `Insurance upload failed: ${String(error)}`;
+        }
+      });
+      uploadProfileVehicleButton.addEventListener('click', async () => {
+        try {
+          await uploadSelectedImage({
+            fileInput: profileVehicleFile,
+            targetInput: profileVehicleUri,
+            statusSink: profileVaultFeed,
+            folder: `profiles/${profileRole.value || 'customer'}/vehicle`,
+          });
+        } catch (error) {
+          profileVaultFeed.textContent = `Vehicle upload failed: ${String(error)}`;
+        }
+      });
+      uploadProfileDeliveryButton.addEventListener('click', async () => {
+        try {
+          await uploadSelectedImage({
+            fileInput: profileDeliveryFile,
+            targetInput: profileDeliveryUri,
+            statusSink: profileVaultFeed,
+            folder: `profiles/${profileRole.value || 'customer'}/delivery`,
+          });
+        } catch (error) {
+          profileVaultFeed.textContent = `Delivery upload failed: ${String(error)}`;
+        }
+      });
+      document.getElementById('saveProfileButton').addEventListener('click', async () => {
+        try {
+          await saveProfile();
+        } catch (error) {
+          profileVaultFeed.textContent = `Unable to save profile: ${String(error)}`;
+        }
+      });
+      openTerminalProfileButton.addEventListener('click', openTerminalProfileModal);
+      closeTerminalProfileModal.addEventListener('click', closeTerminalProfile);
+      terminalProfileBackdrop.addEventListener('click', (event) => {
+        if (event.target === terminalProfileBackdrop) {
+          closeTerminalProfile();
+        }
+      });
+      document.getElementById('saveTerminalProfileButton').addEventListener('click', async () => {
+        try {
+          await saveTerminalProfile();
+        } catch (error) {
+          terminalProfileFeed.textContent = `Unable to save terminal profile: ${String(error)}`;
+        }
+      });
+      uploadTerminalLicenseButton.addEventListener('click', async () => {
+        try {
+          await uploadSelectedImage({
+            fileInput: terminalCreateLicenseFile,
+            targetInput: terminalCreateLicenseUri,
+            statusSink: terminalProfileFeed,
+            folder: 'profiles/admin/license',
+          });
+        } catch (error) {
+          terminalProfileFeed.textContent = `Terminal license upload failed: ${String(error)}`;
+        }
+      });
+      uploadTerminalInsuranceButton.addEventListener('click', async () => {
+        try {
+          await uploadSelectedImage({
+            fileInput: terminalCreateInsuranceFile,
+            targetInput: terminalCreateInsuranceUri,
+            statusSink: terminalProfileFeed,
+            folder: 'profiles/admin/insurance',
+          });
+        } catch (error) {
+          terminalProfileFeed.textContent = `Terminal insurance upload failed: ${String(error)}`;
+        }
+      });
+      uploadTerminalVehicleButton.addEventListener('click', async () => {
+        try {
+          await uploadSelectedImage({
+            fileInput: terminalCreateVehicleFile,
+            targetInput: terminalCreateVehicleUri,
+            statusSink: terminalProfileFeed,
+            folder: 'profiles/admin/vehicle',
+          });
+        } catch (error) {
+          terminalProfileFeed.textContent = `Terminal vehicle upload failed: ${String(error)}`;
+        }
+      });
+      uploadTerminalDeliveryButton.addEventListener('click', async () => {
+        try {
+          await uploadSelectedImage({
+            fileInput: terminalCreateDeliveryFile,
+            targetInput: terminalCreateDeliveryUri,
+            statusSink: terminalProfileFeed,
+            folder: 'profiles/admin/delivery',
+          });
+        } catch (error) {
+          terminalProfileFeed.textContent = `Terminal delivery upload failed: ${String(error)}`;
+        }
+      });
+      document.getElementById('saveTerminalSettingsButton').addEventListener('click', async () => {
+        try {
+          await saveTerminalSettings();
+        } catch (error) {
+          terminalSettingsFeed.textContent = `Unable to save terminal settings: ${String(error)}`;
+        }
+      });
+      document.getElementById('closeProfileModal').addEventListener('click', closeProfileModal);
+      profileModalBackdrop.addEventListener('click', (event) => {
+        if (event.target === profileModalBackdrop) {
+          closeProfileModal();
+        }
+      });
 
       document.getElementById('refreshDeliveries').addEventListener('click', refreshDeliveries);
       document.getElementById('refreshRequests').addEventListener('click', refreshRequests);
@@ -667,6 +1518,9 @@
         verifyState.textContent = ok ? 'Hash accepted.' : 'Hash rejected.';
         await appendLog(ok ? 'hash-verified' : 'hash-rejected');
       });
+
+      refreshProfiles();
     </script>
   </body>
 </html>
+

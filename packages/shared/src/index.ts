@@ -5,4 +5,5 @@ export * from './mockNetwork';
 export * from './mockHandoff';
 export * from './security';
 export * from './serverApi';
+export * from './storeLocations';
 export * from './theme';

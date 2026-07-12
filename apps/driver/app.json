@@ -4,7 +4,10 @@
     "slug": "verdium-driver",
     "scheme": "verdium-driver",
     "version": "1.0.0",
-    "platforms": ["android", "web"],
+    "platforms": [
+      "android",
+      "web"
+    ],
     "userInterfaceStyle": "dark",
     "backgroundColor": "#14181c",
     "android": {

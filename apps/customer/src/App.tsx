@@ -1,28 +1,69 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Image, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { WebView } from 'react-native-webview';
 import { getCustomerDeliveryProofs } from '../../../packages/shared/src/mockHandoff';
+import { authenticateProfile, ProfileRecord } from '../../../packages/shared/src/profileVault';
+import { generateTestHash } from '../../../packages/shared/src/security';
+import { normalizeVirginiaStoreLocation, VIRGINIA_STORE_LOCATIONS } from '../../../packages/shared/src/storeLocations';
 import {
   CustomerDeliveryRecord,
+  CustomerRequestRecord,
+  cancelCustomerRequestToServer,
   fetchCustomerDeliveriesFromServer,
+  fetchCustomerRequestsFromServer,
+  fetchProfilesFromServer,
+  saveProfileToServer,
   submitCustomerRequestToServer,
+  uploadProfileImageToServer,
 } from '../../../packages/shared/src/serverApi';
 
 export default function App() {
+  const [signedIn, setSignedIn] = useState(false);
+  const [customerEmail, setCustomerEmail] = useState('customer@verdium.example');
+  const [customerPassword, setCustomerPassword] = useState('CustomerVerdium!2026');
+  const [customerProfile, setCustomerProfile] = useState<ProfileRecord | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<string>(VIRGINIA_STORE_LOCATIONS[0]);
+  const [savingLocation, setSavingLocation] = useState(false);
+  const [licenseScanUri, setLicenseScanUri] = useState('');
+  const [scanningLicense, setScanningLicense] = useState(false);
+  const [customerRequests, setCustomerRequests] = useState<CustomerRequestRecord[]>([]);
+  const [cancelConfirmId, setCancelConfirmId] = useState('');
   const [activeTab, setActiveTab] = useState<'home' | 'browser' | 'settings'>('home');
   const [browserMode, setBrowserMode] = useState<'regular' | 'incognito'>('regular');
   const [refreshCount, setRefreshCount] = useState(0);
   const [deliveries, setDeliveries] = useState<CustomerDeliveryRecord[]>([]);
+  const [latestNotification, setLatestNotification] = useState<CustomerDeliveryRecord | null>(null);
+  const [lastDeliverySignature, setLastDeliverySignature] = useState('');
   const [address, setAddress] = useState('');
   const [hashSerial, setHashSerial] = useState('');
   const [qrToken, setQrToken] = useState('');
   const [requestSending, setRequestSending] = useState(false);
   const [browserUrl, setBrowserUrl] = useState('https://www.google.com');
 
+  const refreshRequests = useCallback(async (customerId: string) => {
+    try {
+      const requests = await fetchCustomerRequestsFromServer(customerId);
+      setCustomerRequests(requests);
+    } catch (_error) {
+      setCustomerRequests([]);
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
       const serverDeliveries = await fetchCustomerDeliveriesFromServer();
       setDeliveries(serverDeliveries);
+      const newest = serverDeliveries[0] || null;
+      const signature = newest ? `${newest.orderId}-${newest.deliveredAt}` : '';
+      if (newest && signature !== lastDeliverySignature) {
+        setLatestNotification(newest);
+        if (lastDeliverySignature) {
+          Alert.alert('New delivery notification', `${newest.orderId} has a new delivery photo.`);
+        }
+        setLastDeliverySignature(signature);
+      }
       return;
     } catch (_error) {
       const fallback = getCustomerDeliveryProofs().map((item) => ({
@@ -32,8 +73,14 @@ export default function App() {
         deliveredAt: item.deliveredAt,
       }));
       setDeliveries(fallback);
+      const newest = fallback[0] || null;
+      const signature = newest ? `${newest.orderId}-${newest.deliveredAt}` : '';
+      if (newest && signature !== lastDeliverySignature) {
+        setLatestNotification(newest);
+        setLastDeliverySignature(signature);
+      }
     }
-  }, []);
+  }, [lastDeliverySignature]);
 
   useEffect(() => {
     refresh();
@@ -45,8 +92,183 @@ export default function App() {
     Alert.alert('Verdium Notice', 'Please confirm with dispensary that they are affiliated with Verdium.');
   }, []);
 
+  useEffect(() => {
+    if (!signedIn || !customerProfile) {
+      setCustomerRequests([]);
+      return;
+    }
+
+    refreshRequests(customerProfile.email);
+    const interval = setInterval(() => refreshRequests(customerProfile.email), 7000);
+    return () => clearInterval(interval);
+  }, [customerProfile, refreshRequests, signedIn]);
+
+  const signInCustomer = async () => {
+    const cleanEmail = customerEmail.trim().toLowerCase();
+    const cleanPassword = customerPassword.trim();
+    if (!cleanEmail.includes('@') || cleanPassword.length < 6 || licenseScanUri.length === 0) {
+      Alert.alert('Sign-in required', 'Enter your email, password, and scan your license to continue.');
+      return;
+    }
+
+    try {
+      const remoteProfiles = await fetchProfilesFromServer(undefined, cleanEmail);
+      const remoteProfile = remoteProfiles.find((profile) => profile.email === cleanEmail && profile.password === cleanPassword);
+      const localProfile = authenticateProfile(cleanEmail, cleanPassword);
+      const profile = remoteProfile || localProfile;
+
+      if (!profile || profile.role === 'driver') {
+        Alert.alert('Sign-in failed', 'No matching customer profile was found for that email.');
+        return;
+      }
+
+      let uploadedLicenseUri = licenseScanUri;
+      try {
+        const imageBase64 = await FileSystem.readAsStringAsync(licenseScanUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        const uploaded = await uploadProfileImageToServer({
+          imageBase64,
+          mimeType: 'image/jpeg',
+          fileName: `customer-license-${Date.now()}.jpg`,
+          folder: `profiles/customer/${cleanEmail}`,
+        });
+        uploadedLicenseUri = uploaded.imageUri;
+      } catch (_uploadError) {
+        // Fall back to local image URI in offline or non-upload environments.
+      }
+
+      try {
+        const selectedStoreLocation = normalizeVirginiaStoreLocation(selectedLocation);
+        await saveProfileToServer({
+          ...profile,
+          storeLocation: selectedStoreLocation,
+          licenseImageUri: uploadedLicenseUri,
+          documents: profile.documents,
+        });
+      } catch (_saveError) {
+        // Keep sign-in working offline; the license image will be retried on the next login.
+      }
+
+      const profileWithLocation = {
+        ...profile,
+        storeLocation: normalizeVirginiaStoreLocation(selectedLocation),
+      };
+      setCustomerProfile(profileWithLocation);
+      setSelectedLocation(profileWithLocation.storeLocation || VIRGINIA_STORE_LOCATIONS[0]);
+      setSignedIn(true);
+      await refreshRequests(profileWithLocation.email);
+    } catch (_error) {
+      const fallbackProfile = authenticateProfile(cleanEmail, cleanPassword);
+      if (!fallbackProfile || fallbackProfile.role === 'driver') {
+        Alert.alert('Sign-in failed', 'No matching customer profile was found for that email.');
+        return;
+      }
+
+      let uploadedLicenseUri = licenseScanUri;
+      try {
+        const imageBase64 = await FileSystem.readAsStringAsync(licenseScanUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        const uploaded = await uploadProfileImageToServer({
+          imageBase64,
+          mimeType: 'image/jpeg',
+          fileName: `customer-license-${Date.now()}.jpg`,
+          folder: `profiles/customer/${cleanEmail}`,
+        });
+        uploadedLicenseUri = uploaded.imageUri;
+      } catch (_uploadError) {
+        // Fall back to local image URI in offline or non-upload environments.
+      }
+
+      try {
+        const selectedStoreLocation = normalizeVirginiaStoreLocation(selectedLocation);
+        await saveProfileToServer({
+          ...fallbackProfile,
+          storeLocation: selectedStoreLocation,
+          licenseImageUri: uploadedLicenseUri,
+          documents: fallbackProfile.documents,
+        });
+      } catch (_saveError) {
+        // Keep sign-in working offline; the license image will be retried on the next login.
+      }
+
+      const profileWithLocation = {
+        ...fallbackProfile,
+        storeLocation: normalizeVirginiaStoreLocation(selectedLocation),
+      };
+      setCustomerProfile(profileWithLocation);
+      setSelectedLocation(profileWithLocation.storeLocation || VIRGINIA_STORE_LOCATIONS[0]);
+      setSignedIn(true);
+      await refreshRequests(profileWithLocation.email);
+    }
+  };
+
+  const saveCustomerLocation = async () => {
+    if (!customerProfile) {
+      return;
+    }
+
+    setSavingLocation(true);
+    const locationToSave = normalizeVirginiaStoreLocation(selectedLocation);
+    const updatedProfile = {
+      ...customerProfile,
+      storeLocation: locationToSave,
+      documents: customerProfile.documents,
+    };
+    try {
+      await saveProfileToServer(updatedProfile);
+      setCustomerProfile(updatedProfile);
+      Alert.alert('Profile updated', `Store location saved as ${locationToSave}.`);
+    } catch (_error) {
+      Alert.alert('Update failed', 'Could not save your profile location right now.');
+    } finally {
+      setSavingLocation(false);
+    }
+  };
+
+  const requestLicenseScan = async () => {
+    setScanningLicense(true);
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Camera denied', 'Camera permission is required to capture the license image.');
+      setScanningLicense(false);
+      return;
+    }
+
+    const photo = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+    if (photo.canceled || !photo.assets?.[0]?.uri) {
+      Alert.alert('Scan failed', 'No license image was captured.');
+      setScanningLicense(false);
+      return;
+    }
+
+    setLicenseScanUri(photo.assets[0].uri);
+    setScanningLicense(false);
+  };
+
+  const cancelCustomerRequest = async (request: CustomerRequestRecord) => {
+    if (cancelConfirmId !== request.id) {
+      setCancelConfirmId(request.id);
+      return;
+    }
+
+    if (!customerProfile) {
+      return;
+    }
+
+    try {
+      await cancelCustomerRequestToServer(request.id, customerProfile.email);
+      await refreshRequests(customerProfile.email);
+      setCancelConfirmId('');
+    } catch (_error) {
+      Alert.alert('Cancel failed', 'Could not cancel that order.');
+    }
+  };
+
   const submitRequest = async () => {
     const cleanHash = hashSerial.replace(/\s+/g, '').toUpperCase();
+    const customerId = customerProfile?.email || customerEmail.trim().toLowerCase();
     if (!address || !qrToken || !/^[A-Z0-9]{48}$/.test(cleanHash)) {
       Alert.alert('Invalid request', 'Address, QR token, and a valid 48-character hash are required.');
       return;
@@ -56,7 +278,7 @@ export default function App() {
     try {
       await submitCustomerRequestToServer(
         {
-          customerId: 'customer-mobile',
+          customerId,
           address,
           hashSerial: cleanHash,
           qrToken,
@@ -66,12 +288,70 @@ export default function App() {
       setHashSerial('');
       setQrToken('');
       Alert.alert('Request sent', 'Delivery request with hash and QR token was sent to admin.');
+      if (customerProfile) {
+        await refreshRequests(customerProfile.email);
+      }
     } catch (_error) {
       Alert.alert('Send failed', 'Unable to reach server-cache endpoint.');
     } finally {
       setRequestSending(false);
     }
   };
+
+  if (!signedIn) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loginShell}>
+          <Text style={styles.title}>Verdium Customer</Text>
+          <Text style={styles.subtitle}>Atrium Copia</Text>
+          <Text style={styles.description}>Customer sign-in requires an email, password, and license scan before you can view delivery updates.</Text>
+          <View style={styles.card}>
+            <TextInput
+              value={customerEmail}
+              onChangeText={setCustomerEmail}
+              placeholder="Email address"
+              placeholderTextColor="#9fb2bf"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              style={styles.input}
+            />
+            <TextInput
+              value={customerPassword}
+              onChangeText={setCustomerPassword}
+              placeholder="Password"
+              placeholderTextColor="#9fb2bf"
+              secureTextEntry
+              style={styles.input}
+            />
+            <Text style={styles.muted}>Select Store Location</Text>
+            <View style={styles.locationRow}>
+              {VIRGINIA_STORE_LOCATIONS.map((location) => (
+                <Pressable
+                  key={location}
+                  onPress={() => setSelectedLocation(location)}
+                  style={selectedLocation === location ? styles.locationChipActive : styles.locationChip}
+                >
+                  <Text style={styles.locationChipText}>{location}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable onPress={requestLicenseScan} style={styles.buttonMuted}>
+              <Text style={styles.buttonText}>{scanningLicense ? 'License Scan Open' : 'Scan License'}</Text>
+            </Pressable>
+            {licenseScanUri.length > 0 && (
+              <Pressable onPress={() => Linking.openURL(licenseScanUri)} style={styles.buttonMuted}>
+                <Text style={styles.buttonText}>Review License Scan</Text>
+              </Pressable>
+            )}
+            <Pressable onPress={signInCustomer} style={styles.button}>
+              <Text style={styles.buttonText}>Sign In</Text>
+            </Pressable>
+          </View>
+          {scanningLicense && <Text style={styles.muted}>License capture uses the device camera when you tap Scan License.</Text>}
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -83,6 +363,44 @@ export default function App() {
             <Text style={styles.description}>
               Customer delivery feed. When a driver completes delivery with camera proof, a link appears below.
             </Text>
+
+            {customerProfile && (
+              <View style={styles.profileGrid}>
+                <View style={styles.profileCard}>
+                  <Text style={styles.orderTitle}>{customerProfile.displayName}</Text>
+                  <Text style={styles.muted}>{customerProfile.email}</Text>
+                  <Text style={styles.muted}>Role: {customerProfile.role}</Text>
+                  <Text style={styles.muted}>Store: {customerProfile.storeLocation || selectedLocation}</Text>
+                </View>
+                {customerProfile.documents.map((document) => (
+                  <View key={document.kind} style={styles.profileCard}>
+                    <Text style={styles.orderTitle}>{document.label}</Text>
+                    <Text style={styles.muted}>{document.summary}</Text>
+                    {document.imageUri ? (
+                      <Pressable onPress={() => Linking.openURL(document.imageUri)} style={styles.buttonMuted}>
+                        <Text style={styles.buttonText}>Open Document Image</Text>
+                      </Pressable>
+                    ) : (
+                      <Text style={styles.muted}>Document stored in profile card.</Text>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {latestNotification && (
+              <View style={styles.notificationCard}>
+                <View style={styles.notificationThumbWrap}>
+                  <Image source={{ uri: latestNotification.imageUri }} style={styles.notificationThumb} />
+                </View>
+                <View style={styles.notificationBody}>
+                  <Text style={styles.notificationTitle}>Delivery Notification</Text>
+                  <Text style={styles.notificationText}>{latestNotification.orderId}</Text>
+                  <Text style={styles.notificationText}>{latestNotification.address}</Text>
+                  <Text style={styles.notificationText}>Delivered: {latestNotification.deliveredAt}</Text>
+                </View>
+              </View>
+            )}
 
             <View style={styles.card}>
               <Text style={styles.orderTitle}>Send Delivery Request To Admin</Text>
@@ -97,15 +415,18 @@ export default function App() {
                 value={hashSerial}
                 onChangeText={setHashSerial}
                 placeholder="48-character dispensary hash"
-                placeholderTextColor="#9fb2bf"
+                placeholderTextColor="#9ca5af"
                 autoCapitalize="characters"
                 style={styles.input}
               />
+              <Pressable onPress={() => setHashSerial(generateTestHash())} style={styles.buttonMuted}>
+                <Text style={styles.buttonText}>Generate Test Hash</Text>
+              </Pressable>
               <TextInput
                 value={qrToken}
                 onChangeText={setQrToken}
                 placeholder="QR token"
-                placeholderTextColor="#9fb2bf"
+                placeholderTextColor="#9ca5af"
                 style={styles.input}
               />
               <Pressable onPress={submitRequest} style={styles.button} disabled={requestSending}>
@@ -128,6 +449,7 @@ export default function App() {
                 <Text style={styles.orderTitle}>{delivery.orderId}</Text>
                 <Text style={styles.muted}>{delivery.address}</Text>
                 <Text style={styles.muted}>Delivered: {delivery.deliveredAt}</Text>
+                <Image source={{ uri: delivery.imageUri }} style={styles.deliveryThumb} />
                 <Pressable onPress={() => Linking.openURL(delivery.imageUri)} style={styles.buttonMuted}>
                   <Text style={styles.buttonText}>View Delivery Image</Text>
                 </Pressable>
@@ -160,6 +482,41 @@ export default function App() {
                 incognito={browserMode === 'incognito'}
               />
             </View>
+
+          {customerRequests.length > 0 && (
+            <View style={styles.card}>
+              <Text style={styles.orderTitle}>My Requests</Text>
+              {customerRequests.map((request) => (
+                <View key={request.id} style={styles.requestCard}>
+                  <Text style={styles.muted}>{request.id}</Text>
+                  <Text style={styles.orderTitle}>{request.address}</Text>
+                  <Text style={styles.muted}>Status: {request.status}</Text>
+                  <Text style={styles.muted}>Hash: {request.hashSerial.slice(0, 8)}…</Text>
+                  {cancelConfirmId === request.id && (
+                    <View style={styles.sureCard}>
+                      <Text style={styles.sureTitle}>Are you sure?</Text>
+                      <Text style={styles.sureBody}>This will cancel the order and log the cancellation.</Text>
+                      <Pressable onPress={() => cancelCustomerRequest(request)} style={styles.buttonMuted}>
+                        <Text style={styles.buttonText}>Confirm Cancel</Text>
+                      </Pressable>
+                      <Pressable onPress={() => setCancelConfirmId('')} style={styles.buttonMuted}>
+                        <Text style={styles.buttonText}>Keep Order</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                  {cancelConfirmId === request.id && (
+                    <View style={styles.sureCardAlt}>
+                      <Text style={styles.sureTitle}>Are you sure you are sure?</Text>
+                      <Text style={styles.sureBody}>Final confirmation is required before the cancellation is logged.</Text>
+                    </View>
+                  )}
+                  <Pressable onPress={() => cancelCustomerRequest(request)} style={styles.buttonMuted}>
+                    <Text style={styles.buttonText}>Cancel Order</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          )}
           </View>
         )}
 
@@ -184,6 +541,24 @@ export default function App() {
                   <Text style={styles.buttonText}>Incognito Mode</Text>
                 </Pressable>
               </View>
+            </View>
+            <View style={styles.card}>
+              <Text style={styles.orderTitle}>Profile Store Location</Text>
+              <Text style={styles.muted}>Choose your client profile location for requests and terminal routing.</Text>
+              <View style={styles.locationRow}>
+                {VIRGINIA_STORE_LOCATIONS.map((location) => (
+                  <Pressable
+                    key={`settings-${location}`}
+                    onPress={() => setSelectedLocation(location)}
+                    style={selectedLocation === location ? styles.locationChipActive : styles.locationChip}
+                  >
+                    <Text style={styles.locationChipText}>{location}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Pressable onPress={saveCustomerLocation} style={styles.button} disabled={savingLocation}>
+                <Text style={styles.buttonText}>{savingLocation ? 'Saving...' : 'Save Profile Location'}</Text>
+              </Pressable>
             </View>
           </View>
         )}
@@ -213,7 +588,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#14181c',
+    backgroundColor: '#0f1114',
   },
   pagePad: {
     padding: 16,
@@ -223,38 +598,77 @@ const styles = StyleSheet.create({
   contentWrap: {
     flex: 1,
   },
+  loginShell: {
+    flex: 1,
+    padding: 16,
+    justifyContent: 'center',
+    gap: 14,
+  },
   title: {
-    color: '#f6f8fa',
+    color: '#f2f4f7',
     fontSize: 34,
     fontWeight: '800',
   },
   subtitle: {
-    color: '#9fb2bf',
+    color: '#9ca5af',
     textTransform: 'uppercase',
     letterSpacing: 2,
   },
   description: {
-    color: '#f6f8fa',
+    color: '#f2f4f7',
     marginBottom: 6,
   },
   card: {
-    backgroundColor: '#1b2127',
+    backgroundColor: '#171b20',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(57, 214, 195, 0.16)',
+    borderColor: 'rgba(99, 171, 255, 0.18)',
     padding: 14,
     gap: 6,
   },
+  notificationCard: {
+    flexDirection: 'row',
+    gap: 12,
+    backgroundColor: '#1e242b',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#63abff',
+    padding: 12,
+    alignItems: 'center',
+  },
+  notificationThumbWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#0f1114',
+  },
+  notificationThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  notificationBody: {
+    flex: 1,
+    gap: 2,
+  },
+  notificationTitle: {
+    color: '#63abff',
+    fontWeight: '800',
+    fontSize: 16,
+  },
+  notificationText: {
+    color: '#f2f4f7',
+  },
   orderTitle: {
-    color: '#f6f8fa',
+    color: '#f2f4f7',
     fontWeight: '700',
     fontSize: 17,
   },
   muted: {
-    color: '#9fb2bf',
+    color: '#9ca5af',
   },
   button: {
-    backgroundColor: '#39d6c3',
+    backgroundColor: '#63abff',
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -262,10 +676,10 @@ const styles = StyleSheet.create({
   },
   buttonMuted: {
     marginTop: 6,
-    backgroundColor: '#20272e',
+    backgroundColor: '#b6c0cb',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(57, 214, 195, 0.16)',
+    borderColor: 'rgba(99, 171, 255, 0.18)',
     paddingVertical: 10,
     paddingHorizontal: 12,
     alignItems: 'center',
@@ -273,9 +687,9 @@ const styles = StyleSheet.create({
   input: {
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(57, 214, 195, 0.16)',
-    color: '#f6f8fa',
-    backgroundColor: '#20272e',
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    color: '#f2f4f7',
+    backgroundColor: '#1e242b',
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
@@ -288,12 +702,29 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(57, 214, 195, 0.16)',
+    borderColor: 'rgba(99, 171, 255, 0.18)',
     overflow: 'hidden',
-    backgroundColor: '#1b2127',
+    backgroundColor: '#171b20',
   },
   browserWebView: {
     flex: 1,
+  },
+  camera: {
+    height: 380,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  rowButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  deliveryThumb: {
+    width: '100%',
+    height: 180,
+    borderRadius: 14,
+    backgroundColor: '#0f1114',
+    marginTop: 4,
   },
   footerTabs: {
     flexDirection: 'row',
@@ -302,15 +733,15 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(57, 214, 195, 0.16)',
-    backgroundColor: '#1b2127',
+    borderTopColor: 'rgba(99, 171, 255, 0.18)',
+    backgroundColor: '#171b20',
   },
   footerTab: {
     flex: 1,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(57, 214, 195, 0.16)',
-    backgroundColor: '#20272e',
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    backgroundColor: '#b6c0cb',
     paddingVertical: 11,
     alignItems: 'center',
   },
@@ -318,8 +749,8 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#39d6c3',
-    backgroundColor: 'rgba(57, 214, 195, 0.16)',
+    borderColor: '#63abff',
+    backgroundColor: '#63abff',
     paddingVertical: 11,
     alignItems: 'center',
   },
@@ -330,8 +761,8 @@ const styles = StyleSheet.create({
   modeButton: {
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(57, 214, 195, 0.16)',
-    backgroundColor: '#20272e',
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    backgroundColor: '#b6c0cb',
     paddingVertical: 11,
     paddingHorizontal: 12,
     alignItems: 'center',
@@ -339,14 +770,76 @@ const styles = StyleSheet.create({
   modeButtonActive: {
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#39d6c3',
-    backgroundColor: 'rgba(57, 214, 195, 0.16)',
+    borderColor: '#63abff',
+    backgroundColor: '#63abff',
     paddingVertical: 11,
     paddingHorizontal: 12,
     alignItems: 'center',
   },
-  buttonText: {
-    color: '#f6f8fa',
+  locationRow: {
+    marginTop: 6,
+    marginBottom: 6,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  locationChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    backgroundColor: '#b6c0cb',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  locationChipActive: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#63abff',
+    backgroundColor: '#63abff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  locationChipText: {
+    color: '#05070a',
     fontWeight: '700',
+    fontSize: 12,
+  },
+  buttonText: {
+    color: '#05070a',
+    fontWeight: '700',
+  },
+  requestCard: {
+    marginTop: 10,
+    backgroundColor: '#1e242b',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    padding: 12,
+    gap: 6,
+  },
+  sureCard: {
+    backgroundColor: '#0f1114',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    padding: 10,
+    gap: 8,
+    marginTop: 6,
+  },
+  sureCardAlt: {
+    backgroundColor: '#161a20',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 171, 255, 0.32)',
+    padding: 10,
+    gap: 8,
+    marginTop: 6,
+  },
+  sureTitle: {
+    color: '#f2f4f7',
+    fontWeight: '800',
+  },
+  sureBody: {
+    color: '#9ca5af',
   },
 });

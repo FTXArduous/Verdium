@@ -14,8 +14,13 @@
     "check": "npm run check --workspaces"
   },
   "devDependencies": {
+    "@react-native-community/cli": "^20.2.0",
     "@types/node": "^22.15.30",
     "@types/react": "^19.1.8",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "expo-barcode-scanner": "^14.0.1",
+    "expo-camera": "~16.1.11"
   }
 }

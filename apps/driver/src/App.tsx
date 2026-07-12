@@ -1,20 +1,27 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Alert, Animated, Image, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { WebView } from 'react-native-webview';
 import { recordDriverCompletion } from '../../../packages/shared/src/mockHandoff';
+import { authenticateProfile, ProfileRecord } from '../../../packages/shared/src/profileVault';
 import {
+  archiveDriverPhotosToServer,
   closeDriverNotification,
   DriverNotification,
+  DriverPhotoArchiveEntry,
   fetchDriverNotifications,
   sendDriverPing,
+  saveProfileToServer,
   submitDeliveryCompletionToServer,
+  uploadProfileImageToServer,
 } from '../../../packages/shared/src/serverApi';
 import {
   cancelDriverDelivery,
   DriverQueueItem,
   fetchDriverQueue,
 } from '../../../packages/shared/src/serverApi';
+import { normalizeVirginiaStoreLocation, VIRGINIA_STORE_LOCATIONS } from '../../../packages/shared/src/storeLocations';
 
 type DriverOrder = {
   id: string;
@@ -37,10 +44,20 @@ const drivers: DriverIdentity[] = [
 ];
 
 export default function App() {
+  const [signedIn, setSignedIn] = useState(false);
   const [screen, setScreen] = useState<DriverScreen>('queue');
   const [activeOrder, setActiveOrder] = useState<DriverOrder | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [driverEmail, setDriverEmail] = useState('driver@verdium.example');
+  const [driverPassword, setDriverPassword] = useState('DriverVerdium!2026');
+  const [driverProfile, setDriverProfile] = useState<ProfileRecord | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<string>(VIRGINIA_STORE_LOCATIONS[0]);
+  const [savingLocation, setSavingLocation] = useState(false);
+  const [licenseScanUri, setLicenseScanUri] = useState('');
+  const [scanningLicense, setScanningLicense] = useState(false);
+  const [driverPhotoLog, setDriverPhotoLog] = useState<DriverPhotoArchiveEntry[]>([]);
+  const [activeCarouselIndex, setActiveCarouselIndex] = useState(0);
   const [cameraCredential, setCameraCredential] = useState('');
   const [cameraUnlocked, setCameraUnlocked] = useState(false);
   const [proofUri, setProofUri] = useState('');
@@ -48,12 +65,26 @@ export default function App() {
   const [activeNotification, setActiveNotification] = useState<DriverNotification | null>(null);
   const [driverQueue, setDriverQueue] = useState<DriverQueueItem[]>([]);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
-  const [permission, requestPermission] = useCameraPermissions();
-  const cameraRef = useRef<CameraView | null>(null);
   const notificationSlide = useRef(new Animated.Value(-380)).current;
+
+  useEffect(() => {
+    if (!signedIn || driverPhotoLog.length === 0) {
+      return;
+    }
+
+    const carousel = setInterval(() => {
+      setActiveCarouselIndex((current) => (current + 1) % driverPhotoLog.length);
+    }, 3200);
+
+    return () => clearInterval(carousel);
+  }, [driverPhotoLog.length, signedIn]);
 
   // Initial sign-in ping + 5-minute keep-alive pings
   useEffect(() => {
+    if (!signedIn) {
+      return;
+    }
+
     const driver = drivers.find((d) => d.id === selectedDriverId) || drivers[0];
     const ping = () => {
       sendDriverPing(driver.id, driver.label).catch(() => {/* silent offline */});
@@ -61,10 +92,14 @@ export default function App() {
     ping(); // one ping immediately on sign-in / driver switch
     const interval = setInterval(ping, 5 * 60 * 1000); // every 5 minutes
     return () => clearInterval(interval);
-  }, [selectedDriverId]);
+  }, [selectedDriverId, signedIn]);
 
   // Poll server queue every 6 seconds
   useEffect(() => {
+    if (!signedIn) {
+      return;
+    }
+
     const poll = async () => {
       try {
         const items = await fetchDriverQueue(selectedDriverId);
@@ -74,7 +109,7 @@ export default function App() {
     poll();
     const interval = setInterval(poll, 6000);
     return () => clearInterval(interval);
-  }, [selectedDriverId]);
+  }, [selectedDriverId, signedIn]);
 
   const topItem = driverQueue[0] ?? null;
 
@@ -94,6 +129,161 @@ export default function App() {
       Alert.alert('Cancel failed', 'Could not cancel. Try again.');
     }
     setCancelConfirmId(null);
+  };
+
+  const requestLicenseScan = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Camera denied', 'Camera permission is required to capture the driver license.');
+      return;
+    }
+
+    const photo = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+    if (photo.canceled || !photo.assets?.[0]?.uri) {
+      Alert.alert('Scan failed', 'No license image was captured.');
+      return;
+    }
+
+    setLicenseScanUri(photo.assets[0].uri);
+    setDriverPhotoLog((prev) => [
+      {
+        phase: 'before-trip',
+        label: 'Driver license scan',
+        imageUri: photo.assets[0].uri,
+        createdAt: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+  };
+
+  const captureTripPhoto = async (label: string) => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Camera denied', 'Camera permission is required to capture delivery proof.');
+      return;
+    }
+
+    const photo = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+    if (photo.canceled || !photo.assets?.[0]?.uri) {
+      Alert.alert('Capture failed', 'No trip photo was captured.');
+      return;
+    }
+
+    setDriverPhotoLog((prev) => [
+      {
+        phase: activeOrder ? 'during-trip' : 'before-trip',
+        label,
+        imageUri: photo.assets[0].uri,
+        createdAt: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+  };
+
+  const completeDriverSignIn = async () => {
+    const cleanEmail = driverEmail.trim().toLowerCase();
+    const cleanPassword = driverPassword.trim();
+    if (!cleanEmail.includes('@') || cleanPassword.length < 6 || licenseScanUri.length === 0) {
+      Alert.alert('Sign-in required', 'Enter your driver email, password, and scan your license first.');
+      return;
+    }
+
+    try {
+      const profile = authenticateProfile(cleanEmail, cleanPassword);
+      if (!profile || profile.role !== 'driver') {
+        Alert.alert('Sign-in required', 'No matching driver profile was found for that email.');
+        return;
+      }
+
+      let uploadedLicenseUri = licenseScanUri;
+      try {
+        const imageBase64 = await FileSystem.readAsStringAsync(licenseScanUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        const uploaded = await uploadProfileImageToServer({
+          imageBase64,
+          mimeType: 'image/jpeg',
+          fileName: `driver-license-${Date.now()}.jpg`,
+          folder: `profiles/driver/${cleanEmail}`,
+        });
+        uploadedLicenseUri = uploaded.imageUri;
+      } catch (_uploadError) {
+        // Fall back to local image URI in offline or non-upload environments.
+      }
+
+      try {
+        const selectedStoreLocation = normalizeVirginiaStoreLocation(selectedLocation);
+        await saveProfileToServer({
+          ...profile,
+          storeLocation: selectedStoreLocation,
+          licenseImageUri: uploadedLicenseUri,
+          documents: profile.documents,
+        });
+      } catch (_saveError) {
+        // Keep sign-in working offline; the license image will be retried on the next login.
+      }
+
+      const profileWithLocation = {
+        ...profile,
+        storeLocation: normalizeVirginiaStoreLocation(selectedLocation),
+      };
+      setDriverProfile(profileWithLocation);
+      setSelectedLocation(profileWithLocation.storeLocation || VIRGINIA_STORE_LOCATIONS[0]);
+      setSignedIn(true);
+    } catch (_error) {
+      Alert.alert('Sign-in required', 'No matching driver profile was found for that email.');
+    }
+  };
+
+  const saveDriverLocation = async () => {
+    if (!driverProfile) {
+      return;
+    }
+
+    setSavingLocation(true);
+    const locationToSave = normalizeVirginiaStoreLocation(selectedLocation);
+    const updatedProfile = {
+      ...driverProfile,
+      storeLocation: locationToSave,
+      documents: driverProfile.documents,
+    };
+    try {
+      await saveProfileToServer(updatedProfile);
+      setDriverProfile(updatedProfile);
+      Alert.alert('Profile updated', `Driver location saved as ${locationToSave}.`);
+    } catch (_error) {
+      Alert.alert('Update failed', 'Could not save driver location right now.');
+    } finally {
+      setSavingLocation(false);
+    }
+  };
+
+  const signOutDriver = async () => {
+    if (driverPhotoLog.length > 0) {
+      try {
+        await archiveDriverPhotosToServer({
+          driverId: selectedDriverId,
+          sessionId: `${selectedDriverId}-${Date.now()}`,
+          photos: driverPhotoLog,
+        });
+      } catch (_error) {
+        // Leave offline fallback local if archive upload fails.
+      }
+    }
+
+    setDriverPhotoLog([]);
+    setActiveCarouselIndex(0);
+    setDriverEmail('driver@verdium.example');
+    setDriverPassword('DriverVerdium!2026');
+    setLicenseScanUri('');
+    setSignedIn(false);
+    setScreen('queue');
+    setActiveOrder(null);
+    setStartedAt(null);
+    setElapsedSeconds(0);
+    setCameraCredential('');
+    setCameraUnlocked(false);
+    setProofUri('');
   };
 
   useEffect(() => {
@@ -138,7 +328,15 @@ export default function App() {
     if (!activeOrder) {
       return 'about:blank';
     }
-    return `https://www.google.com/maps?q=${encodeURIComponent(activeOrder.address)}&output=embed`;
+
+    const apiKey = String(process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '').trim();
+    const mapQuery = encodeURIComponent(activeOrder.address);
+
+    if (apiKey) {
+      return `https://maps.googleapis.com/maps/api/staticmap?size=900x900&scale=2&zoom=18&maptype=satellite&center=${mapQuery}&markers=color:red%7C${mapQuery}&key=${apiKey}`;
+    }
+
+    return `https://www.google.com/maps?q=${mapQuery}&t=k&z=18&output=embed`;
   }, [activeOrder]);
 
   const openOrder = (order: DriverOrder) => {
@@ -190,29 +388,28 @@ export default function App() {
       return;
     }
 
-    if (!permission?.granted) {
-      const result = await requestPermission();
-      if (!result.granted) {
-        Alert.alert('Camera denied', 'Camera permission is required to complete delivery proof.');
-        return;
-      }
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Camera denied', 'Camera permission is required to complete delivery proof.');
+      return;
     }
 
     setCameraUnlocked(true);
   };
 
   const saveDeliveryProof = async () => {
-    if (!cameraRef.current || !activeOrder) {
+    if (!activeOrder) {
       return;
     }
 
-    const photo = await cameraRef.current.takePictureAsync({ quality: 0.7 });
-    if (!photo?.uri) {
+    const photo = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+    if (photo.canceled || !photo.assets?.[0]?.uri) {
       Alert.alert('Capture failed', 'No photo was captured.');
       return;
     }
 
-    setProofUri(photo.uri);
+    const proofImageUri = photo.assets[0].uri;
+    setProofUri(proofImageUri);
 
     try {
       await submitDeliveryCompletionToServer(
@@ -220,7 +417,7 @@ export default function App() {
           orderId: activeOrder.id,
           elapsedSeconds,
           address: activeOrder.address,
-          imageUri: photo.uri,
+          imageUri: proofImageUri,
         },
       );
     } catch (_error) {
@@ -229,7 +426,7 @@ export default function App() {
         orderId: activeOrder.id,
         elapsedSeconds,
         address: activeOrder.address,
-        imageUri: photo.uri,
+        imageUri: proofImageUri,
       });
     }
 
@@ -245,6 +442,85 @@ export default function App() {
     setElapsedSeconds(0);
     setScreen('queue');
   };
+
+  if (!signedIn) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.pagePad}>
+          <Text style={styles.title}>Verdium Driver</Text>
+          <Text style={styles.subtitle}>Atrium Copia</Text>
+          <Text style={styles.address}>Driver sign-in requires an email, password, and a scanned driver's license.</Text>
+
+          <View style={styles.card}>
+            <Text style={styles.orderTitle}>Select Driver Profile</Text>
+            <View style={styles.driverRow}>
+              {drivers.map((driver) => (
+                <Pressable
+                  key={driver.id}
+                  onPress={() => setSelectedDriverId(driver.id)}
+                  style={driver.id === selectedDriverId ? styles.driverChipActive : styles.driverChip}
+                >
+                  <Text style={styles.driverChipText}>{driver.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <TextInput
+              value={driverEmail}
+              onChangeText={setDriverEmail}
+              placeholder="Driver email"
+              placeholderTextColor="#9fb2bf"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              style={styles.input}
+            />
+            <TextInput
+              value={driverPassword}
+              onChangeText={setDriverPassword}
+              placeholder="Password"
+              placeholderTextColor="#9fb2bf"
+              secureTextEntry
+              style={styles.input}
+            />
+            <Text style={styles.orderMeta}>Select Driver Location</Text>
+            <View style={styles.locationRow}>
+              {VIRGINIA_STORE_LOCATIONS.map((location) => (
+                <Pressable
+                  key={location}
+                  onPress={() => setSelectedLocation(location)}
+                  style={selectedLocation === location ? styles.locationChipActive : styles.locationChip}
+                >
+                  <Text style={styles.locationChipText}>{location}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable onPress={requestLicenseScan} style={styles.button}>
+              <Text style={styles.buttonText}>{scanningLicense ? 'License Scan Open' : 'Scan Driver License'}</Text>
+            </Pressable>
+            {licenseScanUri.length > 0 && (
+              <Pressable onPress={() => Linking.openURL(licenseScanUri)} style={styles.buttonMuted}>
+                <Text style={styles.buttonText}>Review License Scan</Text>
+              </Pressable>
+            )}
+            <Pressable onPress={completeDriverSignIn} style={styles.buttonMuted}>
+              <Text style={styles.buttonText}>Sign In</Text>
+            </Pressable>
+          </View>
+
+          {scanningLicense && (
+            <View style={styles.card}>
+              <Text style={styles.orderTitle}>Scan Driver License</Text>
+              <Pressable onPress={requestLicenseScan} style={styles.button}>
+                <Text style={styles.buttonText}>Capture License</Text>
+              </Pressable>
+              <Pressable onPress={() => setScanningLicense(false)} style={styles.buttonMuted}>
+                <Text style={styles.buttonText}>Cancel</Text>
+              </Pressable>
+            </View>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   if (screen === 'delivery' && activeOrder) {
     return (
@@ -289,7 +565,7 @@ export default function App() {
               style={styles.cancelFloating}
             >
               <Text style={styles.cancelFloatingText}>
-                {cancelConfirmId === activeOrder.id ? 'Are you sure? Tap again' : 'Cancel Delivery'}
+                {cancelConfirmId === activeOrder.id ? 'Are you sure? Tap again' : 'Cancel Order'}
               </Text>
             </Pressable>
           )}
@@ -325,7 +601,6 @@ export default function App() {
 
           {cameraUnlocked && (
             <View style={styles.card}>
-              <CameraView ref={cameraRef} style={styles.camera} facing="back" />
               <View style={styles.rowButtons}>
                 <Pressable onPress={saveDeliveryProof} style={styles.button}>
                   <Text style={styles.buttonText}>Save Photo Proof</Text>
@@ -354,6 +629,78 @@ export default function App() {
         <Text style={styles.subtitle}>Atrium Copia</Text>
         <Text style={styles.address}>Deliveries assigned to you by admin appear below.</Text>
 
+        {driverProfile && (
+          <View style={styles.card}>
+            <Text style={styles.orderTitle}>{driverProfile.displayName}</Text>
+            <Text style={styles.orderMeta}>{driverProfile.email}</Text>
+            <Text style={styles.orderMeta}>Store: {driverProfile.storeLocation || selectedLocation}</Text>
+            <View style={styles.documentGrid}>
+              {driverProfile.documents.map((document) => (
+                <View key={document.kind} style={styles.documentCard}>
+                  <Text style={styles.orderTitle}>{document.label}</Text>
+                  <Text style={styles.orderMeta}>{document.summary}</Text>
+                  {document.imageUri ? (
+                    <Pressable onPress={() => Linking.openURL(document.imageUri)} style={styles.buttonMuted}>
+                      <Text style={styles.buttonText}>Open Document</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        <View style={styles.card}>
+          <Text style={styles.orderTitle}>Driver Settings</Text>
+          <Text style={styles.orderMeta}>Set your profile location for terminal and dispatch hierarchy.</Text>
+          <View style={styles.locationRow}>
+            {VIRGINIA_STORE_LOCATIONS.map((location) => (
+              <Pressable
+                key={`driver-settings-${location}`}
+                onPress={() => setSelectedLocation(location)}
+                style={selectedLocation === location ? styles.locationChipActive : styles.locationChip}
+              >
+                <Text style={styles.locationChipText}>{location}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable onPress={saveDriverLocation} style={styles.button} disabled={savingLocation}>
+            <Text style={styles.buttonText}>{savingLocation ? 'Saving...' : 'Save Driver Location'}</Text>
+          </Pressable>
+        </View>
+
+        {driverPhotoLog.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.orderTitle}>Trip Photo Carousel</Text>
+            <Text style={styles.orderMeta}>Before-trip and during-trip photos rotate here until logout.</Text>
+            <View style={styles.carouselFrame}>
+              <Image
+                source={{ uri: driverPhotoLog[activeCarouselIndex]?.imageUri }}
+                style={styles.carouselImage}
+              />
+              <View style={styles.carouselOverlay}>
+                <View style={styles.carouselBadge}>
+                  <Text style={styles.carouselBadgeText}>
+                    {driverPhotoLog[activeCarouselIndex]?.phase === 'before-trip' ? 'Before trip' : 'During trip'}
+                  </Text>
+                </View>
+                <Text style={styles.carouselCaption}>{driverPhotoLog[activeCarouselIndex]?.label}</Text>
+                <Pressable onPress={() => Linking.openURL(driverPhotoLog[activeCarouselIndex]?.imageUri)}>
+                  <Text style={styles.carouselLink}>Open current photo</Text>
+                </Pressable>
+              </View>
+            </View>
+            <View style={styles.rowButtons}>
+              <Pressable onPress={() => captureTripPhoto('Before-trip photo')} style={styles.button}>
+                <Text style={styles.buttonText}>Add Before-Trip Photo</Text>
+              </Pressable>
+              <Pressable onPress={() => captureTripPhoto('During-trip photo')} style={styles.buttonMuted}>
+                <Text style={styles.buttonText}>Add During-Trip Photo</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
         <View style={styles.driverRow}>
           {drivers.map((driver) => (
             <Pressable
@@ -381,15 +728,36 @@ export default function App() {
                 <Pressable onPress={() => openQueueItem(item)} style={styles.button}>
                   <Text style={styles.buttonText}>Open Delivery</Text>
                 </Pressable>
-                <Pressable onPress={() => handleDriverCancel(item)} style={[styles.buttonMuted, styles.cancelSmall]}>
-                  <Text style={styles.cancelSmallText}>
-                    {cancelConfirmId === item.id ? 'Are you sure? Tap again' : 'Cancel'}
-                  </Text>
-                </Pressable>
+                {cancelConfirmId === item.id ? (
+                  <View style={styles.sureCard}>
+                    <Text style={styles.sureTitle}>Are you sure?</Text>
+                    <Text style={styles.sureBody}>This will cancel the order and log the driver action.</Text>
+                    <View style={styles.rowButtons}>
+                      <Pressable onPress={() => handleDriverCancel(item)} style={styles.button}>
+                        <Text style={styles.buttonText}>Confirm Cancel</Text>
+                      </Pressable>
+                      <Pressable onPress={() => setCancelConfirmId(null)} style={styles.buttonMuted}>
+                        <Text style={styles.buttonText}>Keep Order</Text>
+                      </Pressable>
+                    </View>
+                    <View style={styles.sureCardAlt}>
+                      <Text style={styles.sureTitle}>Are you sure you are sure?</Text>
+                      <Text style={styles.sureBody}>Final confirmation is required before the cancel is logged.</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <Pressable onPress={() => handleDriverCancel(item)} style={[styles.buttonMuted, styles.cancelSmall]}>
+                    <Text style={styles.cancelSmallText}>Cancel Order</Text>
+                  </Pressable>
+                )}
               </>
             )}
           </View>
         ))}
+
+        <Pressable onPress={signOutDriver} style={[styles.buttonMuted, { marginTop: 12 }]}>
+          <Text style={styles.buttonText}>Log Off and Archive Photos</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -404,33 +772,33 @@ function formatTimer(totalSeconds: number) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#14181c',
+    backgroundColor: '#0f1114',
   },
   pagePad: {
     padding: 16,
     gap: 12,
   },
   title: {
-    color: '#f6f8fa',
+    color: '#f2f4f7',
     fontSize: 34,
     fontWeight: '800',
   },
   subtitle: {
-    color: '#9fb2bf',
+    color: '#9ca5af',
     textTransform: 'uppercase',
     letterSpacing: 2,
     marginBottom: 6,
   },
   credentials: {
-    color: '#f6f8fa',
+    color: '#f2f4f7',
     marginTop: 4,
   },
   address: {
-    color: '#f6f8fa',
+    color: '#f2f4f7',
     marginTop: 6,
   },
   timer: {
-    color: '#39d6c3',
+    color: '#63abff',
     fontWeight: '700',
     marginTop: 6,
   },
@@ -440,7 +808,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   button: {
-    backgroundColor: '#39d6c3',
+    backgroundColor: '#63abff',
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -448,33 +816,33 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   buttonMuted: {
-    backgroundColor: '#20272e',
+    backgroundColor: '#b6c0cb',
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(57, 214, 195, 0.16)',
+    borderColor: 'rgba(99, 171, 255, 0.18)',
     flexGrow: 1,
   },
   buttonText: {
-    color: '#f6f8fa',
+    color: '#f2f4f7',
     fontWeight: '700',
   },
   card: {
-    backgroundColor: '#1b2127',
+    backgroundColor: '#171b20',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(57, 214, 195, 0.16)',
+    borderColor: 'rgba(99, 171, 255, 0.18)',
     padding: 12,
     gap: 10,
   },
   input: {
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(57, 214, 195, 0.16)',
-    color: '#f6f8fa',
-    backgroundColor: '#20272e',
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    color: '#f2f4f7',
+    backgroundColor: '#b6c0cb',
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
@@ -484,10 +852,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   orderCard: {
-    backgroundColor: '#1b2127',
+    backgroundColor: '#171b20',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(57, 214, 195, 0.16)',
+    borderColor: 'rgba(99, 171, 255, 0.18)',
     padding: 14,
     gap: 6,
   },
@@ -495,12 +863,12 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   orderTitle: {
-    color: '#f6f8fa',
+    color: '#f2f4f7',
     fontSize: 18,
     fontWeight: '700',
   },
   orderMeta: {
-    color: '#9fb2bf',
+    color: '#9ca5af',
   },
   deliveryTopWrap: {
     flex: 6,
@@ -522,33 +890,72 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginBottom: 6,
   },
+  documentGrid: {
+    gap: 10,
+    marginTop: 10,
+  },
+  documentCard: {
+    backgroundColor: '#b6c0cb',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    padding: 12,
+    gap: 8,
+  },
   driverChip: {
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(57, 214, 195, 0.16)',
-    backgroundColor: '#20272e',
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    backgroundColor: '#b6c0cb',
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   driverChipActive: {
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#39d6c3',
-    backgroundColor: 'rgba(57, 214, 195, 0.16)',
+    borderColor: '#63abff',
+    backgroundColor: 'rgba(99, 171, 255, 0.18)',
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   driverChipText: {
-    color: '#f6f8fa',
+    color: '#f2f4f7',
     fontWeight: '700',
+  },
+  locationRow: {
+    marginTop: 6,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  locationChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    backgroundColor: '#b6c0cb',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  locationChipActive: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#63abff',
+    backgroundColor: '#63abff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  locationChipText: {
+    color: '#05070a',
+    fontWeight: '700',
+    fontSize: 12,
   },
   notificationBanner: {
     marginTop: 8,
     marginBottom: 6,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#39d6c3',
-    backgroundColor: '#20272e',
+    borderColor: '#63abff',
+    backgroundColor: '#b6c0cb',
     padding: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -559,17 +966,17 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   notificationTitle: {
-    color: '#39d6c3',
+    color: '#63abff',
     fontWeight: '800',
   },
   notificationText: {
-    color: '#f6f8fa',
+    color: '#f2f4f7',
   },
   notificationClose: {
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(57, 214, 195, 0.16)',
-    backgroundColor: '#1b2127',
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    backgroundColor: '#171b20',
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
@@ -577,15 +984,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 12,
     right: 14,
-    backgroundColor: '#2e1a1a',
+    backgroundColor: '#b6c0cb',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#f06a6a',
+    borderColor: '#d46a6a',
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
   cancelFloatingText: {
-    color: '#f06a6a',
+    color: '#05070a',
     fontWeight: '700',
     fontSize: 11,
   },
@@ -594,8 +1001,54 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   cancelSmallText: {
-    color: '#f06a6a',
+    color: '#05070a',
     fontWeight: '700',
     fontSize: 12,
   },
+  carouselFrame: {
+    position: 'relative',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    overflow: 'hidden',
+    backgroundColor: '#0f1114',
+    minHeight: 220,
+  },
+  carouselImage: {
+    width: '100%',
+    height: 260,
+  },
+  carouselOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: 14,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 17, 20, 0.76)',
+  },
+  carouselBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(99, 171, 255, 0.18)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 8,
+  },
+  carouselBadgeText: {
+    color: '#63abff',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  carouselCaption: {
+    color: '#f2f4f7',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  carouselLink: {
+    color: '#63abff',
+    marginTop: 4,
+    fontWeight: '700',
+  },
 });
+
