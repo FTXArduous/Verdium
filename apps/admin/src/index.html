@@ -236,6 +236,11 @@
       <header>
         <h1>Verdium Admin</h1>
         <div class="subtitle">Atrium Copia</div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:14px;color:var(--muted);font-weight:700">
+          <input id="wifiSimulationToggle" type="checkbox" style="width:auto;margin:0" />
+          Wi-Fi Terminal Host
+        </label>
+        <div id="wifiTerminalStatus" class="log" style="display:none">Wi-Fi terminal host is off.</div>
       </header>
 
       <section class="card login-box" id="loginCard">
@@ -298,6 +303,7 @@
               <h2>Customer Delivery Requests</h2>
               <p>Accept an incoming order to offer it to the available driver with the smallest delivery load. Each driver has 10 seconds to accept before the next eligible driver receives the offer.</p>
               <button id="refreshRequests">Refresh Requests</button>
+              <button id="multiDeliveryButton" style="margin-left:8px">Multi-Delivery</button>
               <div id="requestFeed" class="log">No customer requests loaded yet.</div>
             </section>
           </div>
@@ -559,6 +565,23 @@
       let currentAdminProfile = null;
       const requestCancelStages = {};
       const alertedRequestIds = new Set();
+      const selectedMultiRequestIds = new Set();
+      const wifiSimulationToggle = document.getElementById('wifiSimulationToggle');
+      const wifiTerminalStatus = document.getElementById('wifiTerminalStatus');
+
+      const refreshWifiTerminal = async () => {
+        if (!window.verdiumAdmin?.getTerminalNetwork) return;
+        const network = await window.verdiumAdmin.getTerminalNetwork();
+        const hosts = Array.isArray(network?.hosts) ? network.hosts : [];
+        const devices = Array.isArray(network?.devices) ? network.devices : [];
+        wifiTerminalStatus.style.display = 'block';
+        wifiTerminalStatus.textContent = network?.running
+          ? `Terminal host: ${hosts.join(' | ') || 'No LAN address found'}\nConnected phones: ${devices.length ? devices.map((device) => `${device.name} (${device.role}) ${device.ipAddress}`).join(' | ') : 'none'}`
+          : 'Wi-Fi terminal host is starting.';
+        if (network?.running && hosts[0]) {
+          cacheApiBaseUrl = hosts[0];
+        }
+      };
 
       const playTerminalOrderAlert = () => {
         try {
@@ -889,6 +912,17 @@
             controls.style.cssText = 'margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center';
 
             if (row.status === 'pending') {
+              const packageToggle = document.createElement('input');
+              packageToggle.type = 'checkbox';
+              packageToggle.checked = selectedMultiRequestIds.has(row.id);
+              packageToggle.addEventListener('change', () => {
+                if (packageToggle.checked) selectedMultiRequestIds.add(row.id);
+                else selectedMultiRequestIds.delete(row.id);
+              });
+              const packageLabel = document.createElement('label');
+              packageLabel.style.cssText = 'color:#9ca5af;font-size:12px';
+              packageLabel.append(packageToggle, document.createTextNode(' Add to Multi-Delivery'));
+              controls.appendChild(packageLabel);
               const btnConfirm = document.createElement('button');
               btnConfirm.textContent = 'Accept & Offer to Driver';
               btnConfirm.style.cssText = 'background:#63abff;color:#05070a;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
@@ -1525,9 +1559,37 @@
 
       document.getElementById('refreshDeliveries').addEventListener('click', refreshDeliveries);
       document.getElementById('refreshRequests').addEventListener('click', refreshRequests);
+      document.getElementById('multiDeliveryButton').addEventListener('click', async () => {
+        if (selectedMultiRequestIds.size < 2) {
+          requestFeed.textContent = 'Select at least two pending customer requests for a Multi-Delivery package.';
+          return;
+        }
+        try {
+          await postAdmin('/api/requests/admin/multi-delivery', { requestIds: [...selectedMultiRequestIds] });
+          selectedMultiRequestIds.clear();
+          await appendLog('multi-delivery-created');
+          await refreshRequests();
+        } catch (error) {
+          await appendLog(`multi-delivery-failed:${String(error)}`);
+        }
+      });
+      wifiSimulationToggle.addEventListener('change', async () => {
+        if (!window.verdiumAdmin?.setWifiSimulation) return;
+        const result = await window.verdiumAdmin.setWifiSimulation(wifiSimulationToggle.checked);
+        if (result.enabled) {
+          await refreshWifiTerminal();
+          await refreshRequests();
+        } else {
+          wifiTerminalStatus.style.display = 'none';
+          cacheApiBaseUrl = '';
+        }
+      });
       window.setInterval(() => {
         if (!dashboard.classList.contains('hidden')) {
           refreshRequests();
+        }
+        if (wifiSimulationToggle.checked) {
+          refreshWifiTerminal().catch(() => undefined);
         }
       }, 2000);
 

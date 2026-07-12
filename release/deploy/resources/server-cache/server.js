@@ -309,6 +309,7 @@ function toDbRequest(record) {
     hash_locked: Boolean(record.hashLocked),
     offer_attempted_driver_ids: Array.isArray(record.offerAttemptedDriverIds) ? record.offerAttemptedDriverIds : [],
     offer_expires_at: record.offerExpiresAt || null,
+    delivery_stops: Array.isArray(record.deliveryStops) ? record.deliveryStops : [],
   };
 }
 
@@ -328,6 +329,7 @@ function fromDbRequest(row) {
       ? row.offer_attempted_driver_ids
       : (Array.isArray(row.offerAttemptedDriverIds) ? row.offerAttemptedDriverIds : []),
     offerExpiresAt: String(row.offer_expires_at || row.offerExpiresAt || ''),
+    deliveryStops: Array.isArray(row.delivery_stops) ? row.delivery_stops : (Array.isArray(row.deliveryStops) ? row.deliveryStops : []),
   };
 }
 
@@ -385,6 +387,7 @@ function toDbQueueItem(record) {
     qr_token: record.qrToken,
     created_at: record.createdAt,
     status: record.status,
+    delivery_stops: Array.isArray(record.deliveryStops) ? record.deliveryStops : [],
   };
 }
 
@@ -398,6 +401,7 @@ function fromDbQueueItem(row) {
     qrToken: String(row.qr_token || row.qrToken || ''),
     createdAt: String(row.created_at || row.createdAt || ''),
     status: String(row.status || 'queued'),
+    deliveryStops: Array.isArray(row.delivery_stops) ? row.delivery_stops : (Array.isArray(row.deliveryStops) ? row.deliveryStops : []),
   };
 }
 
@@ -1127,6 +1131,55 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && req.url === '/api/requests/admin/multi-delivery') {
+    try {
+      const body = await parseJsonBody(req);
+      const requestIds = Array.isArray(body?.requestIds) ? [...new Set(body.requestIds.map(String))] : [];
+      if (requestIds.length < 2) {
+        sendJson(res, 422, { error: 'at least two requestIds are required' });
+        return;
+      }
+      const requests = await store.listRequests();
+      const selected = requestIds.map((requestId) => requests.find((request) => request.id === requestId));
+      if (selected.some((request) => !request || request.status !== 'pending')) {
+        sendJson(res, 409, { error: 'all selected requests must still be pending' });
+        return;
+      }
+      const now = new Date().toISOString();
+      const deliveryStops = selected.map((request, index) => ({
+        stopNumber: index + 1,
+        requestId: request.id,
+        customerId: request.customerId,
+        address: request.address,
+        hashSerial: request.hashSerial,
+        qrToken: request.qrToken,
+      }));
+      const packageRequest = {
+        id: `pkg_${Date.now()}`,
+        customerId: 'multi-delivery',
+        address: `${deliveryStops.length} delivery stops`,
+        hashSerial: selected[0].hashSerial,
+        qrToken: selected[0].qrToken,
+        createdAt: now,
+        status: 'confirmed',
+        confirmedDriverId: '',
+        hashLocked: true,
+        offerAttemptedDriverIds: [],
+        offerExpiresAt: '',
+        deliveryStops,
+      };
+      for (const request of selected) {
+        await store.updateRequest(request.id, { status: 'packaged', hashLocked: true, packageId: packageRequest.id });
+      }
+      await store.insertRequest(packageRequest);
+      const offered = await offerRequestToNextDriver(store, packageRequest);
+      sendJson(res, 201, { ok: true, request: offered });
+    } catch (_error) {
+      sendJson(res, 400, { error: 'invalid json body' });
+    }
+    return;
+  }
+
   if (req.method === 'POST' && req.url === '/api/requests/admin/confirm') {
     try {
       const body = await parseJsonBody(req);
@@ -1280,6 +1333,7 @@ const server = http.createServer(async (req, res) => {
         qrToken: request.qrToken,
         createdAt: new Date().toISOString(),
         status: 'queued',
+        deliveryStops: request.deliveryStops || [],
       });
       const updatedRequest = await store.updateRequest(request.id, {
         status: 'pushed',
@@ -1362,6 +1416,7 @@ const server = http.createServer(async (req, res) => {
         qrToken: request.qrToken,
         createdAt: new Date().toISOString(),
         status: 'queued',
+        deliveryStops: request.deliveryStops || [],
       });
       const updatedRequest = await store.updateRequest(request.id, {
         status: 'pushed',

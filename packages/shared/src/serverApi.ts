@@ -102,12 +102,22 @@ export type CustomerRequestRecord = {
   hashSerial: string;
   qrToken: string;
   createdAt: string;
-  status: 'pending' | 'confirmed' | 'offered' | 'awaiting-driver' | 'pushed' | 'dispatched' | 'cancelled' | 'denied';
+  status: 'pending' | 'confirmed' | 'offered' | 'awaiting-driver' | 'pushed' | 'dispatched' | 'packaged' | 'cancelled' | 'denied';
   dispatchedTo?: string;
   confirmedDriverId?: string;
   hashLocked?: boolean;
   offerAttemptedDriverIds?: string[];
   offerExpiresAt?: string;
+  deliveryStops?: DeliveryStop[];
+};
+
+export type DeliveryStop = {
+  stopNumber: number;
+  requestId: string;
+  customerId: string;
+  address: string;
+  hashSerial: string;
+  qrToken: string;
 };
 
 export type DriverNotification = {
@@ -373,6 +383,7 @@ export type DriverQueueItem = {
   qrToken: string;
   createdAt: string;
   status: 'queued' | 'cancelled';
+  deliveryStops?: DeliveryStop[];
 };
 
 export type DriverOffer = CustomerRequestRecord & {

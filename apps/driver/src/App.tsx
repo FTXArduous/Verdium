@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Component, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Image, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, View, Vibration } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
@@ -53,6 +53,32 @@ const drivers: DriverIdentity[] = [
   { id: 'driver-3', label: 'Driver 3' },
 ];
 
+class DriverErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <SafeAreaView style={styles.container}>
+          <View style={styles.pagePad}>
+            <Text style={styles.title}>Verdium Driver</Text>
+            <Text style={styles.subtitle}>Startup recovery</Text>
+            <View style={styles.card}>
+              <Text style={styles.orderTitle}>The driver app stayed open.</Text>
+              <Text style={styles.orderMeta}>Reopen the app to retry. This screen prevents a JavaScript render failure from appearing as an immediate close.</Text>
+            </View>
+          </View>
+        </SafeAreaView>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function createOfferToneBase64() {
   const sampleRate = 16000;
   const notes = [
@@ -99,7 +125,7 @@ function createOfferToneBase64() {
   return base64Encode(binary);
 }
 
-export default function App() {
+function DriverApp() {
   const [signedIn, setSignedIn] = useState(false);
   const [screen, setScreen] = useState<DriverScreen>('queue');
   const [activeOrder, setActiveOrder] = useState<DriverOrder | null>(null);
@@ -1056,8 +1082,11 @@ export default function App() {
 
         {driverQueue.map((item, index) => (
           <View key={item.id} style={[styles.orderCard, index > 0 && styles.orderCardDimmed]}>
-            <Text style={styles.orderTitle}>Delivery #{index + 1}</Text>
+            <Text style={styles.orderTitle}>{item.deliveryStops?.length ? `Multi-Delivery: ${item.deliveryStops.length} stops` : `Delivery #${index + 1}`}</Text>
             <Text style={styles.orderMeta}>Hash: {item.hashSerial.slice(0, 8)}…</Text>
+            {item.deliveryStops?.map((stop) => (
+              <Text key={stop.requestId} style={styles.orderMeta}>Stop {stop.stopNumber}: {stop.address}</Text>
+            ))}
             {index === 0 && (
               <>
                 <Pressable onPress={() => openQueueItem(item)} style={styles.button}>
@@ -1097,6 +1126,14 @@ export default function App() {
         </Pressable>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
+    <DriverErrorBoundary>
+      <DriverApp />
+    </DriverErrorBoundary>
   );
 }
 
