@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Image, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
-import { WebView } from 'react-native-webview';
 import { getCustomerDeliveryProofs } from '../../../packages/shared/src/mockHandoff';
 import { authenticateProfile } from '../../../packages/shared/src/profileVault';
 import { generateTestHash } from '../../../packages/shared/src/security';
@@ -476,12 +475,10 @@ export default function App() {
               <Text style={styles.buttonText}>Open In Phone Browser</Text>
             </Pressable>
             <View style={styles.browserCard}>
-              <WebView
-                key={`webview-${browserMode}`}
-                source={{ uri: browserUrl }}
-                style={styles.browserWebView}
-                incognito={browserMode === 'incognito'}
-              />
+              <View style={styles.browserPreview}>
+                <Text style={styles.muted}>Embedded WebView is disabled in release mode for stability.</Text>
+                <Text style={styles.muted}>Use Open In Phone Browser to continue.</Text>
+              </View>
             </View>
 
           {customerRequests.length > 0 && (
@@ -718,8 +715,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#171b20',
   },
-  browserWebView: {
+  browserPreview: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    gap: 8,
   },
   camera: {
     height: 380,
