@@ -76,8 +76,13 @@ Use GitHub Releases assets instead:
 1. Open the repository `Releases` page.
 2. Open `Verdium Latest Deploy Assets` (tag `git-large-latest`).
 3. Download:
-- `Verdium-Admin.exe`
+- `Verdium-Admin-win-unpacked.zip`
 - `Verdium-Driver.apk`
 - `Verdium-Customer.apk`
+
+4. For admin desktop:
+- Extract `Verdium-Admin-win-unpacked.zip` fully.
+- Run `Verdium-Admin.exe` from the extracted folder.
+- Do not run a copied standalone EXE by itself; Electron runtime files (including `ffmpeg.dll`) must stay beside it.
 
 The release is automatically refreshed from `git-large` by `.github/workflows/publish-deploy-assets.yml`.

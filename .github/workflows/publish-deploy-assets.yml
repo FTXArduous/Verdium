@@ -24,8 +24,22 @@ jobs:
       - name: Verify deploy artifacts exist
         run: |
           test -f release/deploy/Verdium-Admin.exe
+          test -f release/deploy/@verdiumadmin.exe
+          test -f release/deploy/ffmpeg.dll
+          test -f release/deploy/resources/app.asar
           test -f release/deploy/Verdium-Driver.apk
           test -f release/deploy/Verdium-Customer.apk
+
+      - name: Build admin runtime zip bundle
+        run: |
+          rm -rf release/admin-bundle
+          mkdir -p release/admin-bundle
+          rsync -a \
+            --exclude 'Verdium-Driver.apk' \
+            --exclude 'Verdium-Customer.apk' \
+            release/deploy/ release/admin-bundle/
+          cd release/admin-bundle
+          zip -r ../Verdium-Admin-win-unpacked.zip .
 
       - name: Publish/update latest deploy release
         uses: ncipollo/release-action@v1
@@ -40,6 +54,6 @@ jobs:
           removeArtifacts: true
           artifactErrorsFailBuild: true
           artifacts: |
-            release/deploy/Verdium-Admin.exe
+            release/Verdium-Admin-win-unpacked.zip
             release/deploy/Verdium-Driver.apk
             release/deploy/Verdium-Customer.apk
