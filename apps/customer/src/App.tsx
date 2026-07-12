@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Component, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Image, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
@@ -19,7 +19,46 @@ import {
   uploadProfileImageToServer,
 } from '../../../packages/shared/src/serverApi';
 
-export default function App() {
+type CustomerErrorBoundaryProps = {
+  children: ReactNode;
+};
+
+type CustomerErrorBoundaryState = {
+  error: Error | null;
+};
+
+class CustomerErrorBoundary extends Component<CustomerErrorBoundaryProps, CustomerErrorBoundaryState> {
+  state: CustomerErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): CustomerErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('[Verdium Customer] render failure', error);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <SafeAreaView style={styles.container}>
+          <View style={styles.loginShell}>
+            <Text style={styles.title}>Verdium Customer</Text>
+            <Text style={styles.subtitle}>Atrium Copia</Text>
+            <View style={styles.card}>
+              <Text style={styles.orderTitle}>Customer startup needs attention</Text>
+              <Text style={styles.muted}>The customer app stayed open instead of closing. Reopen it to retry the local startup path.</Text>
+            </View>
+          </View>
+        </SafeAreaView>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+function CustomerApp() {
   const [signedIn, setSignedIn] = useState(false);
   const [customerEmail, setCustomerEmail] = useState('customer@verdium.example');
   const [customerPassword, setCustomerPassword] = useState('CustomerVerdium!2026');
@@ -563,6 +602,14 @@ export default function App() {
         </Pressable>
       </View>
     </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
+    <CustomerErrorBoundary>
+      <CustomerApp />
+    </CustomerErrorBoundary>
   );
 }
 

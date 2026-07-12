@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "Verdium",
+    "name": "Verdium Customer",
     "slug": "verdium-customer",
     "scheme": "verdium",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "platforms": [
       "android",
       "web"
@@ -12,7 +12,7 @@
     "backgroundColor": "#14181c",
     "android": {
       "package": "com.verdium.customer",
-      "versionCode": 5,
+      "versionCode": 6,
       "adaptiveIcon": {
         "backgroundColor": "#14181c"
       },
