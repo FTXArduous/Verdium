@@ -2,6 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow, ipcMain } = require('electron');
 
+// Avoid GPU/media decode instability on some Windows deployments.
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('disable-gpu');
+
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
     return;
@@ -49,6 +53,13 @@ function appendLogLine(line) {
     ensureParentDirs(filePath);
     fs.appendFileSync(filePath, entry, 'utf8');
   }
+}
+
+function logMediaRuntimeState() {
+  const ffmpegPath = path.join(path.dirname(process.execPath), 'ffmpeg.dll');
+  const ffmpegExists = fs.existsSync(ffmpegPath);
+  const ffmpegSize = ffmpegExists ? fs.statSync(ffmpegPath).size : 0;
+  appendLogLine(`[admin] media ffmpeg path=${ffmpegPath} exists=${ffmpegExists} size=${ffmpegSize}`);
 }
 
 function createWindow() {
@@ -132,7 +143,16 @@ ipcMain.handle('verdium-config', () => {
 
 app.whenReady().then(() => {
   appendLogLine('[admin] app started');
+  logMediaRuntimeState();
   createWindow();
+});
+
+process.on('uncaughtException', (error) => {
+  appendLogLine(`[admin] uncaught ${error?.message || 'unknown'}`);
+});
+
+process.on('unhandledRejection', (reason) => {
+  appendLogLine(`[admin] unhandled ${String(reason || 'unknown')}`);
 });
 
 app.on('window-all-closed', () => {

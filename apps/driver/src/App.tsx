@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Image, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
-import { WebView } from 'react-native-webview';
 import { recordDriverCompletion } from '../../../packages/shared/src/mockHandoff';
 import { authenticateProfile, ProfileRecord } from '../../../packages/shared/src/profileVault';
 import {
@@ -526,7 +525,12 @@ export default function App() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.deliveryTopWrap}>
-          <WebView source={{ uri: mapUrl }} style={styles.map} />
+          <View style={styles.mapFallbackCard}>
+            <Text style={styles.orderMeta}>Satellite map preview is opened externally for delivery stability.</Text>
+            <Pressable onPress={() => Linking.openURL(mapUrl)} style={styles.button}>
+              <Text style={styles.buttonText}>Open Satellite Map</Text>
+            </Pressable>
+          </View>
         </View>
         <View style={styles.deliveryBottomWrap}>
           <Text style={styles.title}>Verdium Driver</Text>
@@ -873,6 +877,16 @@ const styles = StyleSheet.create({
   deliveryTopWrap: {
     flex: 6,
     padding: 8,
+  },
+  mapFallbackCard: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 171, 255, 0.18)',
+    backgroundColor: '#171b20',
+    padding: 16,
+    justifyContent: 'center',
+    gap: 12,
   },
   map: {
     flex: 1,
