@@ -168,12 +168,7 @@ function DriverApp() {
     setTerminalConnected(false);
     setStartupServerMode(enabled ? 'offline' : 'checking');
     if (enabled) {
-      const simulationId = `${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
-      setDriverEmail(`driver-${simulationId}@fakeemail.com`);
-      setDriverPassword('WifiSimulation!2026');
-      setDriverQueue([]);
-      setActiveNotification(null);
-      setActiveOffer(null);
+      setTerminalMessage('Enter the terminal Wi-Fi address to use its local mock server for all app requests.');
     } else {
       setTerminalHostUrl('');
       setTerminalMessage('');
@@ -201,7 +196,7 @@ function DriverApp() {
 
   const simulationToggle = (
     <View style={styles.simulationToggle}>
-      <Text style={styles.simulationLabel}>Wi-Fi Sim</Text>
+      <Text style={styles.simulationLabel}>Terminal Mock</Text>
       <Switch
         value={wifiSimulationEnabled}
         onValueChange={setWifiSimulation}
@@ -752,7 +747,7 @@ function DriverApp() {
           <Text style={styles.address}>Driver sign-in requires an email and password. Driver license scan is recommended but not required.</Text>
           <Text style={styles.orderMeta}>
             {wifiSimulationEnabled
-              ? 'Wi-Fi simulation is active. Server functions are disabled and a local fake sign-in is ready.'
+              ? 'Terminal mock mode is active. Connect to the terminal Wi-Fi address to run all app requests against its local server.'
               : startupServerMode === 'online'
               ? 'Startup check: API/server reachable.'
               : startupServerMode === 'offline'
@@ -1122,7 +1117,7 @@ function DriverApp() {
         {offerPrompt}
 
         <Pressable onPress={signOutDriver} style={[styles.buttonMuted, { marginTop: 12 }]}>
-          <Text style={styles.buttonText}>Log Off and Archive Photos</Text>
+          <Text style={styles.buttonText}>Log Out and Archive Photos</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

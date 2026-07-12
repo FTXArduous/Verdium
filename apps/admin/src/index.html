@@ -238,9 +238,9 @@
         <div class="subtitle">Atrium Copia</div>
         <label style="display:flex;align-items:center;gap:8px;margin-top:14px;color:var(--muted);font-weight:700">
           <input id="wifiSimulationToggle" type="checkbox" style="width:auto;margin:0" />
-          Wi-Fi Terminal Host
+          Terminal Mock Server (Wi-Fi)
         </label>
-        <div id="wifiTerminalStatus" class="log" style="display:none">Wi-Fi terminal host is off.</div>
+        <div id="wifiTerminalStatus" class="log" style="display:none">Terminal mock server is off.</div>
       </header>
 
       <section class="card login-box" id="loginCard">
@@ -254,6 +254,7 @@
       </section>
 
       <main class="hidden" id="dashboard">
+        <button id="logoutButton" style="margin-top:16px;background:var(--panel);color:var(--text)">Log Out</button>
         <div class="tab-bar">
           <button class="tab-btn active" data-tab="gateway">Form Gateway</button>
           <button class="tab-btn" data-tab="requests">Customer Requests</button>
@@ -576,8 +577,8 @@
         const devices = Array.isArray(network?.devices) ? network.devices : [];
         wifiTerminalStatus.style.display = 'block';
         wifiTerminalStatus.textContent = network?.running
-          ? `Terminal host: ${hosts.join(' | ') || 'No LAN address found'}\nConnected phones: ${devices.length ? devices.map((device) => `${device.name} (${device.role}) ${device.ipAddress}`).join(' | ') : 'none'}`
-          : 'Wi-Fi terminal host is starting.';
+          ? `Terminal mock server: ${hosts.join(' | ') || 'No LAN address found'}\nConnected phones: ${devices.length ? devices.map((device) => `${device.name} (${device.role}) ${device.ipAddress}`).join(' | ') : 'none'}`
+          : 'Terminal mock server is starting.';
         if (network?.running && hosts[0]) {
           cacheApiBaseUrl = hosts[0];
         }
@@ -1583,6 +1584,13 @@
           wifiTerminalStatus.style.display = 'none';
           cacheApiBaseUrl = '';
         }
+      });
+      document.getElementById('logoutButton').addEventListener('click', () => {
+        currentAdminProfile = null;
+        dashboard.classList.add('hidden');
+        loginCard.classList.remove('hidden');
+        passwordInput.value = '';
+        loginError.textContent = '';
       });
       window.setInterval(() => {
         if (!dashboard.classList.contains('hidden')) {

@@ -68,10 +68,6 @@ export function getTerminalHostUrl() {
 }
 
 function resolveBaseUrl(baseUrl?: string) {
-  if (serverSimulationEnabled) {
-    throw new Error('Wi-Fi simulation mode is enabled. Server functions are unavailable.');
-  }
-
   const maybeGlobal = globalThis as {
     process?: { env?: Record<string, string | undefined> };
     __VERDIUM_API_BASE_URL__?: string;
@@ -169,7 +165,7 @@ export async function connectToTerminalHost(payload: {
   role: 'customer' | 'driver';
 }): Promise<{ terminalName: string; devices: TerminalDevice[] }> {
   setTerminalHostUrl(payload.hostUrl);
-  setServerSimulationEnabled(false);
+  setServerSimulationEnabled(true);
   const response = await fetch(`${resolveBaseUrl()}/api/terminal/devices`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

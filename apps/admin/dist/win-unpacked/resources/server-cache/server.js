@@ -35,6 +35,9 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 const SUPABASE_PROFILE_BUCKET = String(process.env.SUPABASE_PROFILE_BUCKET || 'profile-images').trim();
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && process.env.VERDIUM_LOCAL_ONLY !== 'true');
+const OFFER_WINDOW_MS = 10_000;
+const DEFAULT_DRIVER_IDS = ['driver-1', 'driver-2', 'driver-3'];
+const assignmentLocks = new Set();
 
 function ensureDb() {
   fs.mkdirSync(DB_DIR, { recursive: true });
@@ -163,6 +166,8 @@ function createCustomerRequestRecord(body) {
     qrToken: String(body.qrToken || ''),
     createdAt: now,
     status: 'pending',
+    offerAttemptedDriverIds: [],
+    offerExpiresAt: '',
   };
 }
 
@@ -302,6 +307,9 @@ function toDbRequest(record) {
     dispatched_to: record.dispatchedTo || null,
     confirmed_driver_id: record.confirmedDriverId || null,
     hash_locked: Boolean(record.hashLocked),
+    offer_attempted_driver_ids: Array.isArray(record.offerAttemptedDriverIds) ? record.offerAttemptedDriverIds : [],
+    offer_expires_at: record.offerExpiresAt || null,
+    delivery_stops: Array.isArray(record.deliveryStops) ? record.deliveryStops : [],
   };
 }
 
@@ -317,6 +325,11 @@ function fromDbRequest(row) {
     dispatchedTo: row.dispatched_to || row.dispatchedTo || undefined,
     confirmedDriverId: row.confirmed_driver_id || row.confirmedDriverId || undefined,
     hashLocked: Boolean(row.hash_locked ?? row.hashLocked),
+    offerAttemptedDriverIds: Array.isArray(row.offer_attempted_driver_ids)
+      ? row.offer_attempted_driver_ids
+      : (Array.isArray(row.offerAttemptedDriverIds) ? row.offerAttemptedDriverIds : []),
+    offerExpiresAt: String(row.offer_expires_at || row.offerExpiresAt || ''),
+    deliveryStops: Array.isArray(row.delivery_stops) ? row.delivery_stops : (Array.isArray(row.deliveryStops) ? row.deliveryStops : []),
   };
 }
 
@@ -374,6 +387,7 @@ function toDbQueueItem(record) {
     qr_token: record.qrToken,
     created_at: record.createdAt,
     status: record.status,
+    delivery_stops: Array.isArray(record.deliveryStops) ? record.deliveryStops : [],
   };
 }
 
@@ -387,6 +401,7 @@ function fromDbQueueItem(row) {
     qrToken: String(row.qr_token || row.qrToken || ''),
     createdAt: String(row.created_at || row.createdAt || ''),
     status: String(row.status || 'queued'),
+    deliveryStops: Array.isArray(row.delivery_stops) ? row.delivery_stops : (Array.isArray(row.deliveryStops) ? row.deliveryStops : []),
   };
 }
 
@@ -859,6 +874,77 @@ async function getStore() {
   };
 }
 
+async function closeRequestNotifications(store, driverId, requestId) {
+  const notifications = await store.listNotifications(driverId);
+  await Promise.all(
+    notifications
+      .filter((notification) => notification.requestId === requestId)
+      .map((notification) => store.closeNotification(notification.id))
+  );
+}
+
+async function nextDriverForRequest(store, attemptedDriverIds) {
+  const pings = await store.listPings();
+  const recentDriverIds = [...new Set(
+    pings
+      .filter((ping) => Date.now() - new Date(ping.createdAt).getTime() < 5 * 60 * 1000)
+      .map((ping) => ping.driverId)
+      .filter(Boolean)
+  )];
+  const eligibleDriverIds = (recentDriverIds.length > 0 ? recentDriverIds : DEFAULT_DRIVER_IDS)
+    .filter((driverId) => !attemptedDriverIds.includes(driverId));
+
+  if (eligibleDriverIds.length === 0) {
+    return '';
+  }
+
+  const loads = await Promise.all(eligibleDriverIds.map(async (driverId) => ({
+    driverId,
+    count: (await store.listQueue(driverId)).length,
+  })));
+  loads.sort((left, right) => left.count - right.count || left.driverId.localeCompare(right.driverId));
+  return loads[0].driverId;
+}
+
+async function offerRequestToNextDriver(store, request) {
+  const attemptedDriverIds = Array.isArray(request.offerAttemptedDriverIds) ? request.offerAttemptedDriverIds : [];
+  const driverId = await nextDriverForRequest(store, attemptedDriverIds);
+  if (!driverId) {
+    return store.updateRequest(request.id, {
+      status: 'awaiting-driver',
+      dispatchedTo: '',
+      offerExpiresAt: '',
+    });
+  }
+
+  const offerExpiresAt = new Date(Date.now() + OFFER_WINDOW_MS).toISOString();
+  const updatedRequest = await store.updateRequest(request.id, {
+    status: 'offered',
+    dispatchedTo: driverId,
+    offerAttemptedDriverIds: [...attemptedDriverIds, driverId],
+    offerExpiresAt,
+  });
+  await store.insertNotification(createDriverNotification({
+    driverId,
+    requestId: request.id,
+    message: 'New delivery request. Accept within 10 seconds.',
+    address: request.address,
+  }));
+  return updatedRequest;
+}
+
+async function expireDriverOffers(store) {
+  const requests = await store.listRequests();
+  const now = Date.now();
+  for (const request of requests) {
+    if (request.status !== 'offered' || !request.offerExpiresAt || new Date(request.offerExpiresAt).getTime() > now) {
+      continue;
+    }
+    await closeRequestNotifications(store, String(request.dispatchedTo || ''), request.id);
+    await offerRequestToNextDriver(store, request);
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   if (!req.url || !req.method) {
     sendJson(res, 400, { error: 'invalid request' });
@@ -1045,6 +1131,55 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && req.url === '/api/requests/admin/multi-delivery') {
+    try {
+      const body = await parseJsonBody(req);
+      const requestIds = Array.isArray(body?.requestIds) ? [...new Set(body.requestIds.map(String))] : [];
+      if (requestIds.length < 2) {
+        sendJson(res, 422, { error: 'at least two requestIds are required' });
+        return;
+      }
+      const requests = await store.listRequests();
+      const selected = requestIds.map((requestId) => requests.find((request) => request.id === requestId));
+      if (selected.some((request) => !request || request.status !== 'pending')) {
+        sendJson(res, 409, { error: 'all selected requests must still be pending' });
+        return;
+      }
+      const now = new Date().toISOString();
+      const deliveryStops = selected.map((request, index) => ({
+        stopNumber: index + 1,
+        requestId: request.id,
+        customerId: request.customerId,
+        address: request.address,
+        hashSerial: request.hashSerial,
+        qrToken: request.qrToken,
+      }));
+      const packageRequest = {
+        id: `pkg_${Date.now()}`,
+        customerId: 'multi-delivery',
+        address: `${deliveryStops.length} delivery stops`,
+        hashSerial: selected[0].hashSerial,
+        qrToken: selected[0].qrToken,
+        createdAt: now,
+        status: 'confirmed',
+        confirmedDriverId: '',
+        hashLocked: true,
+        offerAttemptedDriverIds: [],
+        offerExpiresAt: '',
+        deliveryStops,
+      };
+      for (const request of selected) {
+        await store.updateRequest(request.id, { status: 'packaged', hashLocked: true, packageId: packageRequest.id });
+      }
+      await store.insertRequest(packageRequest);
+      const offered = await offerRequestToNextDriver(store, packageRequest);
+      sendJson(res, 201, { ok: true, request: offered });
+    } catch (_error) {
+      sendJson(res, 400, { error: 'invalid json body' });
+    }
+    return;
+  }
+
   if (req.method === 'POST' && req.url === '/api/requests/admin/confirm') {
     try {
       const body = await parseJsonBody(req);
@@ -1052,15 +1187,19 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 422, { error: 'requestId and driverId are required' });
         return;
       }
-      const request = await store.updateRequest(body.requestId, {
+      const confirmedRequest = await store.updateRequest(body.requestId, {
         status: 'confirmed',
         confirmedDriverId: String(body.driverId),
         hashLocked: true,
       });
-      if (!request) {
+      if (!confirmedRequest) {
         sendJson(res, 404, { error: 'request not found' });
         return;
       }
+      const request = await offerRequestToNextDriver(store, {
+        ...confirmedRequest,
+        offerAttemptedDriverIds: [],
+      });
       sendJson(res, 200, { ok: true, request });
     } catch (_error) {
       sendJson(res, 400, { error: 'invalid json body' });
@@ -1096,27 +1235,12 @@ const server = http.createServer(async (req, res) => {
       }
       const requests = await store.listRequests();
       const request = requests.find((item) => item.id === body.requestId);
-      if (!request || request.status !== 'confirmed') {
-        sendJson(res, 422, { error: 'request must be confirmed first' });
+      if (!request || !['confirmed', 'awaiting-driver'].includes(request.status)) {
+        sendJson(res, 422, { error: 'request must be confirmed before dispatch' });
         return;
       }
-      const queue = await store.listQueue(String(request.confirmedDriverId || ''));
-      if (queue.find((item) => item.requestId === body.requestId)) {
-        sendJson(res, 409, { error: 'already in driver queue' });
-        return;
-      }
-      const queueItem = await store.insertQueueItem({
-        id: `q_${Date.now()}`,
-        requestId: request.id,
-        driverId: String(request.confirmedDriverId || ''),
-        address: request.address,
-        hashSerial: request.hashSerial,
-        qrToken: request.qrToken,
-        createdAt: new Date().toISOString(),
-        status: 'queued',
-      });
-      await store.updateRequest(request.id, { status: 'pushed' });
-      sendJson(res, 201, { ok: true, queueItem });
+      const offered = await offerRequestToNextDriver(store, { ...request, offerAttemptedDriverIds: [] });
+      sendJson(res, 201, { ok: true, request: offered });
     } catch (_error) {
       sendJson(res, 400, { error: 'invalid json body' });
     }
@@ -1157,6 +1281,157 @@ const server = http.createServer(async (req, res) => {
     const driverId = parsed.searchParams.get('driverId') || '';
     const queue = await store.listQueue(driverId);
     sendJson(res, 200, { queue });
+    return;
+  }
+
+  if (req.method === 'GET' && req.url.startsWith('/api/driver/offers')) {
+    const parsed = new URL(req.url, 'http://cache.internal');
+    const driverId = parsed.searchParams.get('driverId') || '';
+    await expireDriverOffers(store);
+    const requests = await store.listRequests();
+    const offers = requests.filter((request) => (
+      request.status === 'offered'
+      && request.dispatchedTo === driverId
+      && new Date(request.offerExpiresAt).getTime() > Date.now()
+    ));
+    sendJson(res, 200, { offers });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/driver/offers/accept') {
+    let lockedRequestId = '';
+    try {
+      const body = await parseJsonBody(req);
+      if (!body?.requestId || !body?.driverId) {
+        sendJson(res, 422, { error: 'requestId and driverId required' });
+        return;
+      }
+      lockedRequestId = String(body.requestId);
+      if (assignmentLocks.has(lockedRequestId)) {
+        sendJson(res, 409, { error: 'delivery is being accepted by another driver' });
+        return;
+      }
+      assignmentLocks.add(lockedRequestId);
+      await expireDriverOffers(store);
+      const requests = await store.listRequests();
+      const request = requests.find((item) => item.id === body.requestId);
+      if (!request || request.status !== 'offered' || request.dispatchedTo !== body.driverId) {
+        sendJson(res, 409, { error: 'offer is no longer available' });
+        return;
+      }
+      const queue = await store.listQueue(String(body.driverId));
+      if (queue.some((item) => item.requestId === request.id)) {
+        sendJson(res, 409, { error: 'delivery already accepted' });
+        return;
+      }
+      const queueItem = await store.insertQueueItem({
+        id: `q_${Date.now()}`,
+        requestId: request.id,
+        driverId: String(body.driverId),
+        address: request.address,
+        hashSerial: request.hashSerial,
+        qrToken: request.qrToken,
+        createdAt: new Date().toISOString(),
+        status: 'queued',
+        deliveryStops: request.deliveryStops || [],
+      });
+      const updatedRequest = await store.updateRequest(request.id, {
+        status: 'pushed',
+        confirmedDriverId: String(body.driverId),
+        dispatchedTo: String(body.driverId),
+        offerExpiresAt: '',
+        hashLocked: true,
+      });
+      await closeRequestNotifications(store, String(body.driverId), request.id);
+      sendJson(res, 201, { ok: true, queueItem, request: updatedRequest });
+    } catch (_error) {
+      sendJson(res, 400, { error: 'invalid json body' });
+    } finally {
+      if (lockedRequestId) {
+        assignmentLocks.delete(lockedRequestId);
+      }
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/driver/offers/decline') {
+    try {
+      const body = await parseJsonBody(req);
+      if (!body?.requestId || !body?.driverId) {
+        sendJson(res, 422, { error: 'requestId and driverId required' });
+        return;
+      }
+      const requests = await store.listRequests();
+      const request = requests.find((item) => item.id === body.requestId && item.dispatchedTo === body.driverId && item.status === 'offered');
+      if (!request) {
+        sendJson(res, 409, { error: 'offer is no longer available' });
+        return;
+      }
+      await closeRequestNotifications(store, String(body.driverId), request.id);
+      const nextRequest = await offerRequestToNextDriver(store, request);
+      sendJson(res, 200, { ok: true, request: nextRequest });
+    } catch (_error) {
+      sendJson(res, 400, { error: 'invalid json body' });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && req.url.startsWith('/api/driver/cancelled')) {
+    const parsed = new URL(req.url, 'http://cache.internal');
+    const driverId = parsed.searchParams.get('driverId') || '';
+    const requests = await store.listRequests();
+    const cancelled = requests
+      .filter((request) => request.status === 'cancelled')
+      .map((request) => ({ ...request, available: !request.confirmedDriverId || request.confirmedDriverId === driverId }));
+    sendJson(res, 200, { cancelled });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/driver/cancelled/claim') {
+    let lockedRequestId = '';
+    try {
+      const body = await parseJsonBody(req);
+      if (!body?.requestId || !body?.driverId) {
+        sendJson(res, 422, { error: 'requestId and driverId required' });
+        return;
+      }
+      lockedRequestId = String(body.requestId);
+      if (assignmentLocks.has(lockedRequestId)) {
+        sendJson(res, 409, { error: 'delivery is being selected by another driver' });
+        return;
+      }
+      assignmentLocks.add(lockedRequestId);
+      const requests = await store.listRequests();
+      const request = requests.find((item) => item.id === body.requestId);
+      if (!request || request.status !== 'cancelled') {
+        sendJson(res, 409, { error: 'cancelled delivery is no longer available' });
+        return;
+      }
+      const queueItem = await store.insertQueueItem({
+        id: `q_${Date.now()}`,
+        requestId: request.id,
+        driverId: String(body.driverId),
+        address: request.address,
+        hashSerial: request.hashSerial,
+        qrToken: request.qrToken,
+        createdAt: new Date().toISOString(),
+        status: 'queued',
+        deliveryStops: request.deliveryStops || [],
+      });
+      const updatedRequest = await store.updateRequest(request.id, {
+        status: 'pushed',
+        confirmedDriverId: String(body.driverId),
+        dispatchedTo: String(body.driverId),
+        hashLocked: true,
+      });
+      sendJson(res, 201, { ok: true, queueItem, request: updatedRequest });
+    } catch (_error) {
+      sendJson(res, 400, { error: 'invalid json body' });
+    } finally {
+      if (lockedRequestId) {
+        assignmentLocks.delete(lockedRequestId);
+      }
+    }
     return;
   }
 

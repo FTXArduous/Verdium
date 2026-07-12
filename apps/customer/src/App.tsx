@@ -96,12 +96,7 @@ function CustomerApp() {
     setTerminalConnected(false);
     setStartupServerMode(enabled ? 'offline' : 'checking');
     if (enabled) {
-      const simulationId = `${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
-      setCustomerEmail(`customer-${simulationId}@fakeemail.com`);
-      setCustomerPassword('WifiSimulation!2026');
-      setCustomerRequests([]);
-      setDeliveries([]);
-      setLatestNotification(null);
+      setTerminalMessage('Enter the terminal Wi-Fi address to use its local mock server for all app requests.');
     } else {
       setTerminalHostUrl('');
       setTerminalMessage('');
@@ -129,7 +124,7 @@ function CustomerApp() {
 
   const simulationToggle = (
     <View style={styles.simulationToggle}>
-      <Text style={styles.simulationLabel}>Wi-Fi Sim</Text>
+      <Text style={styles.simulationLabel}>Terminal Mock</Text>
       <Switch
         value={wifiSimulationEnabled}
         onValueChange={setWifiSimulation}
@@ -276,6 +271,15 @@ function CustomerApp() {
     }
   };
 
+  const signOutCustomer = () => {
+    setSignedIn(false);
+    setCustomerProfile(null);
+    setCustomerRequests([]);
+    setCancelConfirmId('');
+    setLatestNotification(null);
+    setActiveTab('home');
+  };
+
   const saveCustomerLocation = async () => {
     if (!customerProfile) {
       return;
@@ -382,7 +386,7 @@ function CustomerApp() {
           <Text style={styles.description}>Customer sign-in requires an email and password. License scan is recommended but not required.</Text>
           <Text style={styles.muted}>
             {wifiSimulationEnabled
-              ? 'Wi-Fi simulation is active. Server functions are disabled and a local fake sign-in is ready.'
+              ? 'Terminal mock mode is active. Connect to the terminal Wi-Fi address to run all app requests against its local server.'
               : startupServerMode === 'online'
               ? 'Startup check: API/server reachable.'
               : startupServerMode === 'offline'
@@ -660,6 +664,9 @@ function CustomerApp() {
               </View>
               <Pressable onPress={saveCustomerLocation} style={styles.button} disabled={savingLocation}>
                 <Text style={styles.buttonText}>{savingLocation ? 'Saving...' : 'Save Profile Location'}</Text>
+              </Pressable>
+              <Pressable onPress={signOutCustomer} style={styles.buttonMuted}>
+                <Text style={styles.buttonText}>Log Out</Text>
               </Pressable>
             </View>
           </View>

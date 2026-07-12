@@ -16,11 +16,13 @@
   "devDependencies": {
     "@react-native-community/cli": "^20.2.0",
     "@types/node": "^22.15.30",
-    "@types/react": "^19.1.8",
-    "typescript": "^5.8.3"
+    "@types/react": "~19.0.10",
+    "typescript": "~5.8.3"
   },
   "dependencies": {
     "expo-barcode-scanner": "^14.0.1",
-    "expo-camera": "~16.1.11"
+    "expo-camera": "~16.1.11",
+    "react": "19.0.0",
+    "react-native": "0.79.6"
   }
 }

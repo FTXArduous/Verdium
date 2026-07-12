@@ -269,11 +269,11 @@ ipcMain.handle('verdium-login', (_event, credentials) => {
   if (wifiSimulationMode) {
     const profile = simulatedAdminProfile || createSimulatedAdminProfile();
     simulatedAdminProfile = profile;
-    appendLogLine(`[admin] simulated login ${profile.email}`);
+    appendLogLine(`[admin] terminal-mock login ${profile.email}`);
     return {
       ok: true,
       profile,
-      reason: 'Wi-Fi simulation mode is active. Server functions are disabled.',
+      reason: 'Terminal mock server mode is active.',
     };
   }
 
@@ -331,7 +331,7 @@ ipcMain.handle('verdium-set-wifi-simulation', (_event, enabled) => {
   } else {
     stopTerminalServer();
   }
-  appendLogLine(`[admin] wifi-simulation ${wifiSimulationMode ? 'enabled' : 'disabled'}`);
+  appendLogLine(`[admin] terminal-mock-server ${wifiSimulationMode ? 'enabled' : 'disabled'}`);
   return {
     enabled: wifiSimulationMode,
     profile: simulatedAdminProfile,
@@ -366,7 +366,7 @@ ipcMain.handle('verdium-startup-health', async () => {
       apiConfigured: false,
       apiReachable: false,
       apiStatusCode: 0,
-      apiReason: 'Wi-Fi simulation mode is active. Server functions are disabled.',
+      apiReason: 'Terminal mock server mode is active. Mobile devices can connect over Wi-Fi.',
       ffmpegPath: mediaState.ffmpegPath,
       ffmpegExists: mediaState.ffmpegExists,
       ffmpegSize: mediaState.ffmpegSize,
