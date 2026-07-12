@@ -37,6 +37,20 @@ let ffmpegRepairState = {
   sourcePath: '',
   error: '',
 };
+let wifiSimulationMode = false;
+let simulatedAdminProfile = null;
+
+function createSimulatedAdminProfile() {
+  const simulationId = `${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
+  return {
+    email: `admin-${simulationId}@fakeemail.com`,
+    password: 'WifiSimulation!2026',
+    displayName: 'Simulated Admin',
+    role: 'admin',
+    storeLocation: 'Williamsburg',
+    documents: [],
+  };
+}
 
 function getMediaRuntimeState() {
   const ffmpegPath = path.join(path.dirname(process.execPath), 'ffmpeg.dll');
@@ -190,6 +204,17 @@ ipcMain.handle('verdium-login', (_event, credentials) => {
   const password = String(credentials?.password || '');
   const apiBaseUrl = getApiBaseUrl();
 
+  if (wifiSimulationMode) {
+    const profile = simulatedAdminProfile || createSimulatedAdminProfile();
+    simulatedAdminProfile = profile;
+    appendLogLine(`[admin] simulated login ${profile.email}`);
+    return {
+      ok: true,
+      profile,
+      reason: 'Wi-Fi simulation mode is active. Server functions are disabled.',
+    };
+  }
+
   if (apiBaseUrl) {
     return fetch(`${apiBaseUrl}/api/profiles?email=${encodeURIComponent(email)}`)
       .then((response) => response.ok ? response.json() : Promise.reject(new Error(`status ${response.status}`)))
@@ -236,7 +261,36 @@ ipcMain.handle('verdium-config', () => {
   };
 });
 
+ipcMain.handle('verdium-set-wifi-simulation', (_event, enabled) => {
+  wifiSimulationMode = Boolean(enabled);
+  simulatedAdminProfile = wifiSimulationMode ? createSimulatedAdminProfile() : null;
+  appendLogLine(`[admin] wifi-simulation ${wifiSimulationMode ? 'enabled' : 'disabled'}`);
+  return {
+    enabled: wifiSimulationMode,
+    profile: simulatedAdminProfile,
+  };
+});
+
 ipcMain.handle('verdium-startup-health', async () => {
+  if (wifiSimulationMode) {
+    const mediaState = getMediaRuntimeState();
+    return {
+      apiBaseUrl: '',
+      apiConfigured: false,
+      apiReachable: false,
+      apiStatusCode: 0,
+      apiReason: 'Wi-Fi simulation mode is active. Server functions are disabled.',
+      ffmpegPath: mediaState.ffmpegPath,
+      ffmpegExists: mediaState.ffmpegExists,
+      ffmpegSize: mediaState.ffmpegSize,
+      ffmpegRepaired: ffmpegRepairState.repaired,
+      ffmpegRepairSource: ffmpegRepairState.sourcePath,
+      ffmpegRepairError: ffmpegRepairState.error,
+      wifiSimulationMode: true,
+      simulatedProfile: simulatedAdminProfile,
+    };
+  }
+
   const apiBaseUrl = getApiBaseUrl();
   const apiState = await checkApiStartupState(apiBaseUrl);
   const mediaState = getMediaRuntimeState();
@@ -260,6 +314,8 @@ ipcMain.handle('verdium-startup-health', async () => {
     ffmpegRepaired: ffmpegRepairState.repaired,
     ffmpegRepairSource: ffmpegRepairState.sourcePath,
     ffmpegRepairError: ffmpegRepairState.error,
+    wifiSimulationMode: false,
+    simulatedProfile: null,
   };
 });
 

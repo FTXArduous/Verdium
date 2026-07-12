@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Image, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Animated, Image, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { recordDriverCompletion } from '../../../packages/shared/src/mockHandoff';
@@ -12,6 +12,7 @@ import {
   fetchDriverNotifications,
   sendDriverPing,
   saveProfileToServer,
+  setServerSimulationEnabled,
   submitDeliveryCompletionToServer,
   uploadProfileImageToServer,
 } from '../../../packages/shared/src/serverApi';
@@ -65,7 +66,33 @@ export default function App() {
   const [driverQueue, setDriverQueue] = useState<DriverQueueItem[]>([]);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [startupServerMode, setStartupServerMode] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [wifiSimulationEnabled, setWifiSimulationEnabled] = useState(false);
   const notificationSlide = useRef(new Animated.Value(-380)).current;
+
+  const setWifiSimulation = (enabled: boolean) => {
+    setServerSimulationEnabled(enabled);
+    setWifiSimulationEnabled(enabled);
+    setStartupServerMode(enabled ? 'offline' : 'checking');
+    if (enabled) {
+      const simulationId = `${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
+      setDriverEmail(`driver-${simulationId}@fakeemail.com`);
+      setDriverPassword('WifiSimulation!2026');
+      setDriverQueue([]);
+      setActiveNotification(null);
+    }
+  };
+
+  const simulationToggle = (
+    <View style={styles.simulationToggle}>
+      <Text style={styles.simulationLabel}>Wi-Fi Sim</Text>
+      <Switch
+        value={wifiSimulationEnabled}
+        onValueChange={setWifiSimulation}
+        trackColor={{ false: '#5c6974', true: '#63abff' }}
+        thumbColor={wifiSimulationEnabled ? '#f2f4f7' : '#d6dde3'}
+      />
+    </View>
+  );
 
   useEffect(() => {
     fetchDriverQueue(drivers[0].id)
@@ -200,6 +227,7 @@ export default function App() {
       displayName: cleanEmail.split('@')[0] || 'Driver',
       role: 'driver',
       storeLocation: normalizeVirginiaStoreLocation(selectedLocation),
+      createdAt: new Date().toISOString(),
       documents: [],
     };
 
@@ -467,11 +495,16 @@ export default function App() {
     return (
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.pagePad}>
-          <Text style={styles.title}>Verdium Driver</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>Verdium Driver</Text>
+            {simulationToggle}
+          </View>
           <Text style={styles.subtitle}>Atrium Copia</Text>
           <Text style={styles.address}>Driver sign-in requires an email and password. Driver license scan is recommended but not required.</Text>
           <Text style={styles.orderMeta}>
-            {startupServerMode === 'online'
+            {wifiSimulationEnabled
+              ? 'Wi-Fi simulation is active. Server functions are disabled and a local fake sign-in is ready.'
+              : startupServerMode === 'online'
               ? 'Startup check: API/server reachable.'
               : startupServerMode === 'offline'
                 ? 'Startup check: API/server not reachable. Local fallback mode is active and the app can still load.'
@@ -561,7 +594,10 @@ export default function App() {
           </View>
         </View>
         <View style={styles.deliveryBottomWrap}>
-          <Text style={styles.title}>Verdium Driver</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>Verdium Driver</Text>
+            {simulationToggle}
+          </View>
           <Text style={styles.subtitle}>Atrium Copia</Text>
           <Text style={styles.credentials}>Credentials: {selectedDriverId}@verdium.example + {activeOrder.token}</Text>
 
@@ -610,7 +646,10 @@ export default function App() {
     return (
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.pagePad}>
-          <Text style={styles.title}>Delivery Proof</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>Delivery Proof</Text>
+            {simulationToggle}
+          </View>
           <Text style={styles.subtitle}>Atrium Copia</Text>
           <Text style={styles.address}>Order: {activeOrder.id}</Text>
           <Text style={styles.address}>Credentialed Camera Step</Text>
@@ -657,7 +696,10 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.pagePad}>
-        <Text style={styles.title}>Verdium Driver</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>Verdium Driver</Text>
+          {simulationToggle}
+        </View>
         <Text style={styles.subtitle}>Atrium Copia</Text>
         <Text style={styles.address}>Deliveries assigned to you by admin appear below.</Text>
 
@@ -814,6 +856,21 @@ const styles = StyleSheet.create({
     color: '#f2f4f7',
     fontSize: 34,
     fontWeight: '800',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  simulationToggle: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  simulationLabel: {
+    color: '#9ca5af',
+    fontSize: 11,
+    fontWeight: '700',
   },
   subtitle: {
     color: '#9ca5af',

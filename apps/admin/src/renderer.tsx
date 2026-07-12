@@ -8,6 +8,7 @@ const forms = bridge.registerForms();
 export function AdminRenderer() {
   const verifier = bridge.registerVerifier();
   const [startupHealth, setStartupHealth] = useState<any>(null);
+  const [wifiSimulationEnabled, setWifiSimulationEnabled] = useState(false);
 
   useEffect(() => {
     const adminApi = (window as any)?.verdiumAdmin;
@@ -30,7 +31,12 @@ export function AdminRenderer() {
     }
 
     const notes = [];
-    if (!startupHealth.apiConfigured) {
+    if (startupHealth.wifiSimulationMode) {
+      notes.push('Wi-Fi simulation is active. Server functions are disabled.');
+      if (startupHealth.simulatedProfile?.email) {
+        notes.push(`Local sign-in: ${startupHealth.simulatedProfile.email}.`);
+      }
+    } else if (!startupHealth.apiConfigured) {
       notes.push('API is not configured. App loaded in local mode.');
     } else if (!startupHealth.apiReachable) {
       notes.push('API did not respond at startup. App loaded in local mode.');
@@ -53,11 +59,28 @@ export function AdminRenderer() {
     return notes.join(' ');
   }, [startupHealth]);
 
+  const toggleWifiSimulation = async () => {
+    const enabled = !wifiSimulationEnabled;
+    const adminApi = (window as any)?.verdiumAdmin;
+    if (!adminApi?.setWifiSimulation) {
+      return;
+    }
+    const result = await adminApi.setWifiSimulation(enabled);
+    setWifiSimulationEnabled(result.enabled);
+    setStartupHealth(await adminApi.getStartupHealth());
+  };
+
   return (
     <div style={layout}>
       <header style={header}>
-        <h1 style={title}>Verdium Admin</h1>
-        <p style={subtitle}>Atrium Copia</p>
+        <div>
+          <h1 style={title}>Verdium Admin</h1>
+          <p style={subtitle}>Atrium Copia</p>
+        </div>
+        <label style={simulationToggle}>
+          <span>Wi-Fi Sim</span>
+          <input type="checkbox" checked={wifiSimulationEnabled} onChange={toggleWifiSimulation} />
+        </label>
       </header>
       <main style={card}>
         <div style={startupBanner}>
@@ -81,7 +104,7 @@ export function AdminRenderer() {
 }
 
 const layout = { minHeight: '100vh', background: theme.colors.background, color: theme.colors.text, padding: 24, fontFamily: 'system-ui, sans-serif' } as const;
-const header = { marginBottom: 24 } as const;
+const header = { marginBottom: 24, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 } as const;
 const title = { margin: 0, fontSize: 40, letterSpacing: 1 } as const;
 const subtitle = { margin: '8px 0 0', color: theme.colors.muted, textTransform: 'uppercase', letterSpacing: 3, fontSize: 12 } as const;
 const card = { background: theme.colors.surface, border: `1px solid ${theme.colors.accentSoft}`, borderRadius: 20, padding: 24, maxWidth: 900 } as const;
@@ -91,5 +114,6 @@ const grid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(14
 const button = { background: theme.colors.accent, color: '#06110f', border: 'none', borderRadius: 14, padding: '14px 16px', fontWeight: 700 } as const;
 const startupBanner = { marginBottom: 16, background: theme.colors.panel, borderRadius: 14, border: `1px solid ${theme.colors.accentSoft}`, padding: 12 } as const;
 const startupText = { margin: '8px 0 0', color: theme.colors.muted, lineHeight: 1.45 } as const;
+const simulationToggle = { display: 'flex', alignItems: 'center', gap: 8, color: theme.colors.muted, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' } as const;
 const panel = { marginTop: 18, background: theme.colors.panel, borderRadius: 16, padding: 16 } as const;
 const pre = { margin: 0, whiteSpace: 'pre-wrap', color: theme.colors.muted } as const;

@@ -47,7 +47,21 @@ export type ProfileRecord = {
   updatedAt?: string;
 };
 
+let serverSimulationEnabled = false;
+
+export function setServerSimulationEnabled(enabled: boolean) {
+  serverSimulationEnabled = enabled;
+}
+
+export function isServerSimulationEnabled() {
+  return serverSimulationEnabled;
+}
+
 function resolveBaseUrl(baseUrl?: string) {
+  if (serverSimulationEnabled) {
+    throw new Error('Wi-Fi simulation mode is enabled. Server functions are unavailable.');
+  }
+
   const maybeGlobal = globalThis as {
     process?: { env?: Record<string, string | undefined> };
     __VERDIUM_API_BASE_URL__?: string;

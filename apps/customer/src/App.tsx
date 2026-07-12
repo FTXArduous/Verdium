@@ -1,5 +1,5 @@
 import React, { Component, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Image, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { getCustomerDeliveryProofs } from '../../../packages/shared/src/mockHandoff';
@@ -15,6 +15,7 @@ import {
   fetchCustomerRequestsFromServer,
   fetchProfilesFromServer,
   saveProfileToServer,
+  setServerSimulationEnabled,
   submitCustomerRequestToServer,
   uploadProfileImageToServer,
 } from '../../../packages/shared/src/serverApi';
@@ -81,6 +82,33 @@ function CustomerApp() {
   const [requestSending, setRequestSending] = useState(false);
   const [browserUrl, setBrowserUrl] = useState('https://www.google.com');
   const [startupServerMode, setStartupServerMode] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [wifiSimulationEnabled, setWifiSimulationEnabled] = useState(false);
+
+  const setWifiSimulation = (enabled: boolean) => {
+    setServerSimulationEnabled(enabled);
+    setWifiSimulationEnabled(enabled);
+    setStartupServerMode(enabled ? 'offline' : 'checking');
+    if (enabled) {
+      const simulationId = `${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
+      setCustomerEmail(`customer-${simulationId}@fakeemail.com`);
+      setCustomerPassword('WifiSimulation!2026');
+      setCustomerRequests([]);
+      setDeliveries([]);
+      setLatestNotification(null);
+    }
+  };
+
+  const simulationToggle = (
+    <View style={styles.simulationToggle}>
+      <Text style={styles.simulationLabel}>Wi-Fi Sim</Text>
+      <Switch
+        value={wifiSimulationEnabled}
+        onValueChange={setWifiSimulation}
+        trackColor={{ false: '#5c6974', true: '#63abff' }}
+        thumbColor={wifiSimulationEnabled ? '#f2f4f7' : '#d6dde3'}
+      />
+    </View>
+  );
 
   const refreshRequests = useCallback(async (customerId: string) => {
     try {
@@ -317,11 +345,16 @@ function CustomerApp() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loginShell}>
-          <Text style={styles.title}>Verdium Customer</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>Verdium Customer</Text>
+            {simulationToggle}
+          </View>
           <Text style={styles.subtitle}>Atrium Copia</Text>
           <Text style={styles.description}>Customer sign-in requires an email and password. License scan is recommended but not required.</Text>
           <Text style={styles.muted}>
-            {startupServerMode === 'online'
+            {wifiSimulationEnabled
+              ? 'Wi-Fi simulation is active. Server functions are disabled and a local fake sign-in is ready.'
+              : startupServerMode === 'online'
               ? 'Startup check: API/server reachable.'
               : startupServerMode === 'offline'
                 ? 'Startup check: API/server not reachable. Local fallback mode is active and the app can still load.'
@@ -380,7 +413,10 @@ function CustomerApp() {
       <View style={styles.contentWrap}>
         {activeTab === 'home' && (
           <ScrollView contentContainerStyle={styles.pagePad}>
-            <Text style={styles.title}>Verdium</Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>Verdium</Text>
+              {simulationToggle}
+            </View>
             <Text style={styles.subtitle}>Atrium Copia</Text>
             <Text style={styles.description}>
               Customer delivery feed. When a driver completes delivery with camera proof, a link appears below.
@@ -482,7 +518,10 @@ function CustomerApp() {
 
         {activeTab === 'browser' && (
           <View style={styles.browserWrap}>
-            <Text style={styles.title}>Browser</Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>Browser</Text>
+              {simulationToggle}
+            </View>
             <Text style={styles.subtitle}>Atrium Copia</Text>
             <Text style={styles.muted}>Mode: {browserMode === 'incognito' ? 'Incognito' : 'Regular'}</Text>
             <TextInput
@@ -542,7 +581,10 @@ function CustomerApp() {
 
         {activeTab === 'settings' && (
           <View style={styles.browserWrap}>
-            <Text style={styles.title}>Settings</Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>Settings</Text>
+              {simulationToggle}
+            </View>
             <Text style={styles.subtitle}>Atrium Copia</Text>
             <View style={styles.card}>
               <Text style={styles.orderTitle}>Browser Privacy Mode</Text>
@@ -636,6 +678,21 @@ const styles = StyleSheet.create({
     color: '#f2f4f7',
     fontSize: 34,
     fontWeight: '800',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  simulationToggle: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  simulationLabel: {
+    color: '#9ca5af',
+    fontSize: 11,
+    fontWeight: '700',
   },
   subtitle: {
     color: '#9ca5af',

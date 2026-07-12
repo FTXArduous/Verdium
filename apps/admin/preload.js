@@ -13,4 +13,7 @@ contextBridge.exposeInMainWorld('verdiumAdmin', {
   getStartupHealth() {
     return ipcRenderer.invoke('verdium-startup-health');
   },
+  setWifiSimulation(enabled) {
+    return ipcRenderer.invoke('verdium-set-wifi-simulation', enabled);
+  },
 });
