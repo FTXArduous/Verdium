@@ -102,10 +102,12 @@ export type CustomerRequestRecord = {
   hashSerial: string;
   qrToken: string;
   createdAt: string;
-  status: 'pending' | 'confirmed' | 'pushed' | 'dispatched' | 'cancelled' | 'denied';
+  status: 'pending' | 'confirmed' | 'offered' | 'awaiting-driver' | 'pushed' | 'dispatched' | 'cancelled' | 'denied';
   dispatchedTo?: string;
   confirmedDriverId?: string;
   hashLocked?: boolean;
+  offerAttemptedDriverIds?: string[];
+  offerExpiresAt?: string;
 };
 
 export type DriverNotification = {
@@ -372,6 +374,64 @@ export type DriverQueueItem = {
   createdAt: string;
   status: 'queued' | 'cancelled';
 };
+
+export type DriverOffer = CustomerRequestRecord & {
+  offerExpiresAt: string;
+  dispatchedTo: string;
+};
+
+export type CancelledDriverDelivery = CustomerRequestRecord & {
+  available: boolean;
+};
+
+export async function fetchDriverOffers(driverId: string, baseUrl?: string): Promise<DriverOffer[]> {
+  const response = await fetch(
+    `${resolveBaseUrl(baseUrl)}/api/driver/offers?driverId=${encodeURIComponent(driverId)}`
+  );
+  if (!response.ok) throw new Error(`offer fetch failed ${response.status}`);
+  const data = await response.json();
+  return data.offers as DriverOffer[];
+}
+
+export async function acceptDriverOffer(requestId: string, driverId: string, baseUrl?: string): Promise<DriverQueueItem> {
+  const response = await fetch(`${resolveBaseUrl(baseUrl)}/api/driver/offers/accept`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId, driverId }),
+  });
+  if (!response.ok) throw new Error(`offer accept failed ${response.status}`);
+  const data = await response.json();
+  return data.queueItem as DriverQueueItem;
+}
+
+export async function declineDriverOffer(requestId: string, driverId: string, baseUrl?: string): Promise<void> {
+  const response = await fetch(`${resolveBaseUrl(baseUrl)}/api/driver/offers/decline`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId, driverId }),
+  });
+  if (!response.ok) throw new Error(`offer decline failed ${response.status}`);
+}
+
+export async function fetchCancelledDriverDeliveries(driverId: string, baseUrl?: string): Promise<CancelledDriverDelivery[]> {
+  const response = await fetch(
+    `${resolveBaseUrl(baseUrl)}/api/driver/cancelled?driverId=${encodeURIComponent(driverId)}`
+  );
+  if (!response.ok) throw new Error(`cancelled delivery fetch failed ${response.status}`);
+  const data = await response.json();
+  return data.cancelled as CancelledDriverDelivery[];
+}
+
+export async function claimCancelledDriverDelivery(requestId: string, driverId: string, baseUrl?: string): Promise<DriverQueueItem> {
+  const response = await fetch(`${resolveBaseUrl(baseUrl)}/api/driver/cancelled/claim`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId, driverId }),
+  });
+  if (!response.ok) throw new Error(`cancelled delivery claim failed ${response.status}`);
+  const data = await response.json();
+  return data.queueItem as DriverQueueItem;
+}
 
 export async function fetchDriverQueue(driverId: string, baseUrl?: string): Promise<DriverQueueItem[]> {
   const response = await fetch(

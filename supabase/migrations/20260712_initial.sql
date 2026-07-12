@@ -22,7 +22,9 @@ create table if not exists public.customer_requests (
   status text not null default 'pending',
   dispatched_to text,
   confirmed_driver_id text,
-  hash_locked boolean not null default false
+  hash_locked boolean not null default false,
+  offer_attempted_driver_ids jsonb not null default '[]'::jsonb,
+  offer_expires_at timestamptz
 );
 
 create index if not exists customer_requests_created_at_idx on public.customer_requests (created_at desc);

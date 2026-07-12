@@ -1,19 +1,28 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Image, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Animated, Image, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, View, Vibration } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import { useAudioPlayer } from 'expo-audio';
 import { recordDriverCompletion } from '../../../packages/shared/src/mockHandoff';
 import { authenticateProfile, ProfileRecord } from '../../../packages/shared/src/profileVault';
 import {
   archiveDriverPhotosToServer,
+  acceptDriverOffer,
+  CancelledDriverDelivery,
+  claimCancelledDriverDelivery,
   closeDriverNotification,
   connectToTerminalHost,
+  declineDriverOffer,
   DriverNotification,
   DriverPhotoArchiveEntry,
+  DriverOffer,
+  fetchCancelledDriverDeliveries,
   fetchDriverNotifications,
+  fetchDriverOffers,
   sendDriverPing,
   saveProfileToServer,
   setServerSimulationEnabled,
+  setTerminalHostUrl,
   submitDeliveryCompletionToServer,
   uploadProfileImageToServer,
 } from '../../../packages/shared/src/serverApi';
@@ -44,6 +53,52 @@ const drivers: DriverIdentity[] = [
   { id: 'driver-3', label: 'Driver 3' },
 ];
 
+function createOfferToneBase64() {
+  const sampleRate = 16000;
+  const notes = [
+    { frequency: 880, duration: 0.14 },
+    { frequency: 0, duration: 0.05 },
+    { frequency: 1046.5, duration: 0.14 },
+  ];
+  const sampleCount = notes.reduce((total, note) => total + Math.floor(note.duration * sampleRate), 0);
+  const bytes = new Uint8Array(44 + sampleCount * 2);
+  const view = new DataView(bytes.buffer);
+  const writeText = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index += 1) bytes[offset + index] = value.charCodeAt(index);
+  };
+  writeText(0, 'RIFF');
+  view.setUint32(4, 36 + sampleCount * 2, true);
+  writeText(8, 'WAVEfmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeText(36, 'data');
+  view.setUint32(40, sampleCount * 2, true);
+  let sampleOffset = 44;
+  notes.forEach((note) => {
+    const noteSamples = Math.floor(note.duration * sampleRate);
+    for (let index = 0; index < noteSamples; index += 1) {
+      const envelope = Math.min(1, index / 200, (noteSamples - index) / 200);
+      const value = note.frequency === 0 ? 0 : Math.round(Math.sin((2 * Math.PI * note.frequency * index) / sampleRate) * 0.38 * envelope * 32767);
+      view.setInt16(sampleOffset, value, true);
+      sampleOffset += 2;
+    }
+  });
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  const base64Encode = (globalThis as unknown as { btoa?: (value: string) => string }).btoa;
+  if (!base64Encode) {
+    throw new Error('base64 encoder unavailable');
+  }
+  return base64Encode(binary);
+}
+
 export default function App() {
   const [signedIn, setSignedIn] = useState(false);
   const [screen, setScreen] = useState<DriverScreen>('queue');
@@ -65,6 +120,10 @@ export default function App() {
   const [selectedDriverId, setSelectedDriverId] = useState(drivers[0].id);
   const [activeNotification, setActiveNotification] = useState<DriverNotification | null>(null);
   const [driverQueue, setDriverQueue] = useState<DriverQueueItem[]>([]);
+  const [activeOffer, setActiveOffer] = useState<DriverOffer | null>(null);
+  const [offerSecondsRemaining, setOfferSecondsRemaining] = useState(0);
+  const [showCancelledDeliveries, setShowCancelledDeliveries] = useState(false);
+  const [cancelledDeliveries, setCancelledDeliveries] = useState<CancelledDriverDelivery[]>([]);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [startupServerMode, setStartupServerMode] = useState<'checking' | 'online' | 'offline'>('checking');
   const [wifiSimulationEnabled, setWifiSimulationEnabled] = useState(false);
@@ -73,6 +132,9 @@ export default function App() {
   const [terminalConnected, setTerminalConnected] = useState(false);
   const [terminalMessage, setTerminalMessage] = useState('');
   const notificationSlide = useRef(new Animated.Value(-380)).current;
+  const offerToneUri = useRef('');
+  const playedOfferIds = useRef(new Set<string>());
+  const notificationPlayer = useAudioPlayer(null);
 
   const setWifiSimulation = (enabled: boolean) => {
     setServerSimulationEnabled(enabled);
@@ -85,6 +147,10 @@ export default function App() {
       setDriverPassword('WifiSimulation!2026');
       setDriverQueue([]);
       setActiveNotification(null);
+      setActiveOffer(null);
+    } else {
+      setTerminalHostUrl('');
+      setTerminalMessage('');
     }
   };
 
@@ -152,6 +218,69 @@ export default function App() {
     return () => clearInterval(interval);
   }, [selectedDriverId, signedIn]);
 
+  useEffect(() => {
+    const prepareOfferTone = async () => {
+      if (!FileSystem.cacheDirectory) {
+        return;
+      }
+      const uri = `${FileSystem.cacheDirectory}verdium-driver-offer.wav`;
+      await FileSystem.writeAsStringAsync(uri, createOfferToneBase64(), {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      offerToneUri.current = uri;
+    };
+    prepareOfferTone().catch(() => undefined);
+  }, []);
+
+  const playOfferAlert = () => {
+    Vibration.vibrate([0, 110, 60, 110]);
+    if (!offerToneUri.current) {
+      return;
+    }
+    try {
+      notificationPlayer.replace({ uri: offerToneUri.current });
+      notificationPlayer.play();
+    } catch (_error) {
+      // Vibration remains available if native audio is unavailable.
+    }
+  };
+
+  useEffect(() => {
+    if (!signedIn) {
+      return;
+    }
+
+    const pollOffers = async () => {
+      try {
+        const offers = await fetchDriverOffers(selectedDriverId);
+        const nextOffer = offers[0] || null;
+        if (nextOffer && !playedOfferIds.current.has(nextOffer.id)) {
+          playedOfferIds.current.add(nextOffer.id);
+          playOfferAlert();
+        }
+        setActiveOffer(nextOffer);
+      } catch (_error) {
+        // The delivery screen remains usable while the server is unreachable.
+      }
+    };
+    pollOffers();
+    const interval = setInterval(pollOffers, 1000);
+    return () => clearInterval(interval);
+  }, [selectedDriverId, signedIn]);
+
+  useEffect(() => {
+    if (!activeOffer) {
+      setOfferSecondsRemaining(0);
+      return;
+    }
+    const updateRemaining = () => {
+      setOfferSecondsRemaining(Math.max(0, Math.ceil((new Date(activeOffer.offerExpiresAt).getTime() - Date.now()) / 1000)));
+    };
+    updateRemaining();
+    const interval = setInterval(updateRemaining, 250);
+    return () => clearInterval(interval);
+  }, [activeOffer]);
+
   // Poll server queue every 6 seconds
   useEffect(() => {
     if (!signedIn) {
@@ -187,6 +316,56 @@ export default function App() {
       Alert.alert('Cancel failed', 'Could not cancel. Try again.');
     }
     setCancelConfirmId(null);
+  };
+
+  const acceptActiveOffer = async () => {
+    if (!activeOffer) {
+      return;
+    }
+    try {
+      const item = await acceptDriverOffer(activeOffer.id, selectedDriverId);
+      setDriverQueue((current) => [item, ...current.filter((queued) => queued.id !== item.id)]);
+      setActiveOffer(null);
+    } catch (_error) {
+      setActiveOffer(null);
+      Alert.alert('Delivery unavailable', 'Another driver accepted this delivery or the 10-second offer expired.');
+    }
+  };
+
+  const declineActiveOffer = async () => {
+    if (!activeOffer) {
+      return;
+    }
+    try {
+      await declineDriverOffer(activeOffer.id, selectedDriverId);
+    } finally {
+      setActiveOffer(null);
+    }
+  };
+
+  const openCancelledDeliveries = async () => {
+    try {
+      const deliveries = await fetchCancelledDriverDeliveries(selectedDriverId);
+      setCancelledDeliveries(deliveries);
+      setShowCancelledDeliveries(true);
+    } catch (_error) {
+      Alert.alert('Cancelled deliveries unavailable', 'Could not load cancelled deliveries right now.');
+    }
+  };
+
+  const claimCancelledDelivery = async (delivery: CancelledDriverDelivery) => {
+    if (!delivery.available) {
+      return;
+    }
+    try {
+      const item = await claimCancelledDriverDelivery(delivery.id, selectedDriverId);
+      setDriverQueue((current) => [item, ...current]);
+      setCancelledDeliveries((current) => current.filter((candidate) => candidate.id !== delivery.id));
+      Alert.alert('Delivery added', 'The address was added to your delivery list and terminal queue.');
+    } catch (_error) {
+      setCancelledDeliveries(await fetchCancelledDriverDeliveries(selectedDriverId));
+      Alert.alert('Delivery unavailable', 'Another driver already selected this cancelled delivery.');
+    }
   };
 
   const requestLicenseScan = async () => {
@@ -357,6 +536,7 @@ export default function App() {
     setCameraCredential('');
     setCameraUnlocked(false);
     setProofUri('');
+    setActiveOffer(null);
   };
 
   useEffect(() => {
@@ -516,6 +696,24 @@ export default function App() {
     setScreen('queue');
   };
 
+  const offerPrompt = activeOffer ? (
+    <View style={styles.offerOverlay}>
+      <View style={styles.offerCard}>
+        <Text style={styles.offerEyebrow}>NEW DELIVERY</Text>
+        <Text style={styles.offerTitle}>Accept in {offerSecondsRemaining}s</Text>
+        <Text style={styles.address}>{activeOffer.address}</Text>
+        <View style={styles.rowButtons}>
+          <Pressable onPress={acceptActiveOffer} style={styles.button}>
+            <Text style={styles.buttonText}>Accept Delivery</Text>
+          </Pressable>
+          <Pressable onPress={declineActiveOffer} style={styles.buttonMuted}>
+            <Text style={styles.buttonText}>Decline</Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  ) : null;
+
   if (!signedIn) {
     return (
       <SafeAreaView style={styles.container}>
@@ -674,6 +872,7 @@ export default function App() {
             </Pressable>
           )}
         </View>
+        {offerPrompt}
       </SafeAreaView>
     );
   }
@@ -725,6 +924,7 @@ export default function App() {
             </Pressable>
           )}
         </ScrollView>
+        {offerPrompt}
       </SafeAreaView>
     );
   }
@@ -823,6 +1023,31 @@ export default function App() {
           ))}
         </View>
 
+        <Pressable onPress={openCancelledDeliveries} style={styles.buttonMuted}>
+          <Text style={styles.buttonText}>Cancelled Deliveries</Text>
+        </Pressable>
+
+        {showCancelledDeliveries && (
+          <View style={styles.card}>
+            <View style={styles.titleRow}>
+              <Text style={styles.orderTitle}>Cancelled Deliveries</Text>
+              <Pressable onPress={() => setShowCancelledDeliveries(false)} style={styles.buttonMuted}>
+                <Text style={styles.buttonText}>Close</Text>
+              </Pressable>
+            </View>
+            {cancelledDeliveries.length === 0 && <Text style={styles.orderMeta}>No cancelled deliveries are available.</Text>}
+            {cancelledDeliveries.map((delivery) => (
+              <View key={delivery.id} style={[styles.orderCard, !delivery.available && styles.orderCardDimmed]}>
+                <Text style={styles.orderTitle}>{delivery.address}</Text>
+                <Text style={styles.orderMeta}>{delivery.available ? 'Available to add to your delivery list.' : 'Selected by another driver.'}</Text>
+                <Pressable disabled={!delivery.available} onPress={() => claimCancelledDelivery(delivery)} style={delivery.available ? styles.button : styles.buttonDisabled}>
+                  <Text style={styles.buttonText}>{delivery.available ? 'Add Delivery' : 'Already Selected'}</Text>
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        )}
+
         {driverQueue.length === 0 && (
           <View style={styles.card}>
             <Text style={styles.orderMeta}>No deliveries assigned yet. Admin will push when ready.</Text>
@@ -864,6 +1089,8 @@ export default function App() {
             )}
           </View>
         ))}
+
+        {offerPrompt}
 
         <Pressable onPress={signOutDriver} style={[styles.buttonMuted, { marginTop: 12 }]}>
           <Text style={styles.buttonText}>Log Off and Archive Photos</Text>
@@ -1145,6 +1372,37 @@ const styles = StyleSheet.create({
     color: '#05070a',
     fontWeight: '700',
     fontSize: 12,
+  },
+  buttonDisabled: {
+    backgroundColor: '#5c6974',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    opacity: 0.45,
+  },
+  offerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(5, 8, 12, 0.82)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  offerCard: {
+    backgroundColor: '#1e242b',
+    borderColor: '#63abff',
+    borderWidth: 2,
+    borderRadius: 12,
+    padding: 20,
+    gap: 12,
+  },
+  offerEyebrow: {
+    color: '#63abff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  offerTitle: {
+    color: '#f2f4f7',
+    fontSize: 26,
+    fontWeight: '800',
   },
   sureCard: {
     backgroundColor: '#0f1114',

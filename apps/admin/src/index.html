@@ -296,7 +296,7 @@
           <div class="grid" style="margin-top:16px">
             <section class="card">
               <h2>Customer Delivery Requests</h2>
-              <p>Requests containing address + 48-char hash + QR token arrive here first, then admin dispatches to a selected driver.</p>
+              <p>Accept an incoming order to offer it to the available driver with the smallest delivery load. Each driver has 10 seconds to accept before the next eligible driver receives the offer.</p>
               <button id="refreshRequests">Refresh Requests</button>
               <div id="requestFeed" class="log">No customer requests loaded yet.</div>
             </section>
@@ -558,6 +558,33 @@
       let cachedProfiles = [];
       let currentAdminProfile = null;
       const requestCancelStages = {};
+      const alertedRequestIds = new Set();
+
+      const playTerminalOrderAlert = () => {
+        try {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (!AudioContextClass) return;
+          const context = new AudioContextClass();
+          const playNote = (frequency, startAt) => {
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            oscillator.type = 'sine';
+            oscillator.frequency.value = frequency;
+            gain.gain.setValueAtTime(0.0001, startAt);
+            gain.gain.exponentialRampToValueAtTime(0.25, startAt + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.15);
+            oscillator.connect(gain).connect(context.destination);
+            oscillator.start(startAt);
+            oscillator.stop(startAt + 0.16);
+          };
+          const startAt = context.currentTime + 0.02;
+          playNote(880, startAt);
+          playNote(1046.5, startAt + 0.21);
+          window.setTimeout(() => context.close(), 600);
+        } catch (_error) {
+          // The terminal remains usable if its audio device is unavailable.
+        }
+      };
 
       const normalizeLocation = (value) => {
         const clean = String(value || '').trim();
@@ -840,6 +867,10 @@
         try {
           const payload = await (await fetch(`${cacheApiBaseUrl}/api/requests/admin`)).json();
           const rows = (payload.requests || []).filter((r) => r.status !== 'denied' && r.status !== 'cancelled');
+          rows.filter((row) => row.status === 'pending' && !alertedRequestIds.has(row.id)).forEach((row) => {
+            alertedRequestIds.add(row.id);
+            playTerminalOrderAlert();
+          });
           requestFeed.innerHTML = '';
           if (rows.length === 0) {
             requestFeed.textContent = 'No pending requests.';
@@ -848,7 +879,7 @@
           rows.forEach((row) => {
             const wrap = document.createElement('div');
             wrap.style.cssText = 'margin-bottom:18px;border:1px solid rgba(99,171,255,0.18);border-radius:14px;padding:14px';
-            const statusColor = row.status === 'confirmed' ? '#63abff' : row.status === 'pushed' ? '#c7dcff' : '#9ca5af';
+            const statusColor = row.status === 'offered' ? '#63abff' : row.status === 'pushed' ? '#c7dcff' : '#9ca5af';
             wrap.innerHTML = `
               <div><strong>${row.id}</strong> <span style="color:${statusColor};font-size:11px">${row.status}</span></div>
               <div style="color:#9ca5af;font-size:12px;margin:4px 0">Hash: ${row.hashSerial ? row.hashSerial.slice(0,8)+'…' : 'n/a'} | QR: ${row.qrToken || 'n/a'}</div>
@@ -858,24 +889,13 @@
             controls.style.cssText = 'margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center';
 
             if (row.status === 'pending') {
-              // Confirm: select driver then confirm
-              const sel = document.createElement('select');
-              sel.style.cssText = 'background:#1e242b;color:#f6f8fa;border:1px solid rgba(99,171,255,0.3);border-radius:10px;padding:8px 10px';
-              drivers.forEach((d) => {
-                const opt = document.createElement('option');
-                opt.value = d;
-                opt.textContent = d;
-                sel.appendChild(opt);
-              });
-              controls.appendChild(sel);
-
               const btnConfirm = document.createElement('button');
-              btnConfirm.textContent = 'Confirm Delivery';
+              btnConfirm.textContent = 'Accept & Offer to Driver';
               btnConfirm.style.cssText = 'background:#63abff;color:#05070a;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
               btnConfirm.addEventListener('click', async () => {
                 try {
-                  await postAdmin('/api/requests/admin/confirm', { requestId: row.id, driverId: sel.value });
-                  await appendLog(`confirmed:${row.id}:${sel.value}`);
+                  await postAdmin('/api/requests/admin/confirm', { requestId: row.id, driverId: 'terminal' });
+                  await appendLog(`accepted-and-offered:${row.id}`);
                   await refreshRequests();
                 } catch (e) { await appendLog(`confirm-failed:${String(e)}`); }
               });
@@ -894,24 +914,22 @@
               controls.appendChild(btnDeny);
             }
 
-            if (row.status === 'confirmed') {
+            if (row.status === 'offered') {
               const info = document.createElement('span');
               info.style.color = '#9ca5af';
-              info.textContent = `Driver: ${row.confirmedDriverId}`;
+              const seconds = Math.max(0, Math.ceil((new Date(row.offerExpiresAt).getTime() - Date.now()) / 1000));
+              info.textContent = `Offered to ${row.dispatchedTo} (${seconds}s remaining)`;
               controls.appendChild(info);
+            }
 
-              const btnPush = document.createElement('button');
-              btnPush.textContent = `Add Delivery → ${row.confirmedDriverId}`;
-              btnPush.style.cssText = 'background:#63abff;color:#05070a;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer';
-              btnPush.addEventListener('click', async () => {
-                try {
-                  await postAdmin('/api/requests/admin/push', { requestId: row.id });
-                  await appendLog(`pushed:${row.id}:${row.confirmedDriverId}`);
-                  await refreshRequests();
-                } catch (e) { await appendLog(`push-failed:${String(e)}`); }
-              });
-              controls.appendChild(btnPush);
+            if (row.status === 'awaiting-driver') {
+              const info = document.createElement('span');
+              info.style.color = '#9ca5af';
+              info.textContent = 'No available driver accepted. Waiting for a driver to come online.';
+              controls.appendChild(info);
+            }
 
+            if (row.status === 'offered') {
               const cancelStage = requestCancelStages[row.id] || 0;
               if (cancelStage > 0) {
                 const sureCard = document.createElement('div');
@@ -1507,6 +1525,11 @@
 
       document.getElementById('refreshDeliveries').addEventListener('click', refreshDeliveries);
       document.getElementById('refreshRequests').addEventListener('click', refreshRequests);
+      window.setInterval(() => {
+        if (!dashboard.classList.contains('hidden')) {
+          refreshRequests();
+        }
+      }, 2000);
 
       document.querySelectorAll('button[data-action]').forEach((button) => {
         button.addEventListener('click', () => appendLog(`action:${button.dataset.action}`));

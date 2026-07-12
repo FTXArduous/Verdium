@@ -17,6 +17,7 @@ import {
   fetchProfilesFromServer,
   saveProfileToServer,
   setServerSimulationEnabled,
+  setTerminalHostUrl,
   submitCustomerRequestToServer,
   uploadProfileImageToServer,
 } from '../../../packages/shared/src/serverApi';
@@ -101,6 +102,9 @@ function CustomerApp() {
       setCustomerRequests([]);
       setDeliveries([]);
       setLatestNotification(null);
+    } else {
+      setTerminalHostUrl('');
+      setTerminalMessage('');
     }
   };
 
