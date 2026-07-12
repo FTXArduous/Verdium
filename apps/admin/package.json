@@ -1,7 +1,7 @@
 {
   "name": "@verdium/admin",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Verdium Admin desktop app",
   "main": "main.js",
   "scripts": {
