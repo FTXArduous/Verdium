@@ -1,0 +1,45 @@
+name: Publish Deploy Assets
+
+on:
+  push:
+    branches:
+      - git-large
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (with LFS)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Pull LFS objects
+        run: git lfs pull
+
+      - name: Verify deploy artifacts exist
+        run: |
+          test -f release/deploy/Verdium-Admin.exe
+          test -f release/deploy/Verdium-Driver.apk
+          test -f release/deploy/Verdium-Customer.apk
+
+      - name: Publish/update latest deploy release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: git-large-latest
+          name: Verdium Latest Deploy Assets
+          body: |
+            Download these assets instead of using GitHub "View raw" on repository files.
+            These files are published from the latest git-large branch build output.
+          prerelease: true
+          allowUpdates: true
+          removeArtifacts: true
+          artifactErrorsFailBuild: true
+          artifacts: |
+            release/deploy/Verdium-Admin.exe
+            release/deploy/Verdium-Driver.apk
+            release/deploy/Verdium-Customer.apk

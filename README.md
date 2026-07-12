@@ -65,3 +65,19 @@ Use environment files so credentials are not hardcoded.
 - `npm run start:cache`
 
 The customer and driver apps read `EXPO_PUBLIC_VERDIUM_API_BASE_URL` directly, so no code edits are needed when changing between local and hosted APIs.
+
+## Downloading Deploy Binaries
+
+Do not use `View raw` for files under `release/deploy`.
+Those files are tracked by Git LFS and raw repository views can return pointer text instead of usable binaries.
+
+Use GitHub Releases assets instead:
+
+1. Open the repository `Releases` page.
+2. Open `Verdium Latest Deploy Assets` (tag `git-large-latest`).
+3. Download:
+- `Verdium-Admin.exe`
+- `Verdium-Driver.apk`
+- `Verdium-Customer.apk`
+
+The release is automatically refreshed from `git-large` by `.github/workflows/publish-deploy-assets.yml`.
