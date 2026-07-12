@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 
 // Avoid GPU/media decode instability on some Windows deployments.
 app.disableHardwareAcceleration();
@@ -32,6 +32,65 @@ loadEnvFile(path.join(__dirname, '.env'));
 loadEnvFile(path.join(__dirname, '..', '..', '.env'));
 
 let mainWindow;
+let ffmpegRepairState = {
+  repaired: false,
+  sourcePath: '',
+  error: '',
+};
+
+function getMediaRuntimeState() {
+  const ffmpegPath = path.join(path.dirname(process.execPath), 'ffmpeg.dll');
+  const ffmpegExists = fs.existsSync(ffmpegPath);
+  const ffmpegSize = ffmpegExists ? fs.statSync(ffmpegPath).size : 0;
+  return { ffmpegPath, ffmpegExists, ffmpegSize };
+}
+
+function getFfmpegCandidatePaths() {
+  const execDir = path.dirname(process.execPath);
+  const resourcesPath = process.resourcesPath || '';
+  return [
+    path.join(execDir, 'resources', 'ffmpeg.dll'),
+    resourcesPath ? path.join(resourcesPath, 'ffmpeg.dll') : '',
+    path.join(__dirname, 'node_modules', 'electron', 'dist', 'ffmpeg.dll'),
+    path.join(__dirname, '..', '..', 'node_modules', 'electron', 'dist', 'ffmpeg.dll'),
+  ].filter(Boolean);
+}
+
+function tryRepairFfmpegIfMissing() {
+  const mediaState = getMediaRuntimeState();
+  if (mediaState.ffmpegExists) {
+    ffmpegRepairState = { repaired: false, sourcePath: '', error: '' };
+    return mediaState;
+  }
+
+  for (const candidatePath of getFfmpegCandidatePaths()) {
+    try {
+      if (!fs.existsSync(candidatePath)) {
+        continue;
+      }
+      fs.copyFileSync(candidatePath, mediaState.ffmpegPath);
+      const repairedState = getMediaRuntimeState();
+      if (repairedState.ffmpegExists) {
+        ffmpegRepairState = {
+          repaired: true,
+          sourcePath: candidatePath,
+          error: '',
+        };
+        appendLogLine(`[admin] ffmpeg repair success source=${candidatePath}`);
+        return repairedState;
+      }
+    } catch (error) {
+      ffmpegRepairState = {
+        repaired: false,
+        sourcePath: candidatePath,
+        error: error?.message || 'copy failed',
+      };
+      appendLogLine(`[admin] ffmpeg repair failed source=${candidatePath} reason=${ffmpegRepairState.error}`);
+    }
+  }
+
+  return getMediaRuntimeState();
+}
 
 function getLogTargets() {
   const appDataLogDir = path.join(app.getPath('appData'), 'Verdium Logs');
@@ -56,10 +115,46 @@ function appendLogLine(line) {
 }
 
 function logMediaRuntimeState() {
-  const ffmpegPath = path.join(path.dirname(process.execPath), 'ffmpeg.dll');
-  const ffmpegExists = fs.existsSync(ffmpegPath);
-  const ffmpegSize = ffmpegExists ? fs.statSync(ffmpegPath).size : 0;
+  const { ffmpegPath, ffmpegExists, ffmpegSize } = getMediaRuntimeState();
   appendLogLine(`[admin] media ffmpeg path=${ffmpegPath} exists=${ffmpegExists} size=${ffmpegSize}`);
+}
+
+async function checkApiStartupState(apiBaseUrl) {
+  if (!apiBaseUrl) {
+    return {
+      configured: false,
+      reachable: false,
+      statusCode: 0,
+      reason: 'VERDIUM_API_BASE_URL is not configured.',
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2500);
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/profiles?email=startup-check`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    return {
+      configured: true,
+      reachable: response.ok,
+      statusCode: response.status,
+      reason: response.ok
+        ? 'API reachable.'
+        : `API responded with status ${response.status}.`,
+    };
+  } catch (error) {
+    clearTimeout(timeout);
+    return {
+      configured: true,
+      reachable: false,
+      statusCode: 0,
+      reason: `API unreachable: ${error?.message || 'network error'}`,
+    };
+  }
 }
 
 function createWindow() {
@@ -141,8 +236,49 @@ ipcMain.handle('verdium-config', () => {
   };
 });
 
+ipcMain.handle('verdium-startup-health', async () => {
+  const apiBaseUrl = getApiBaseUrl();
+  const apiState = await checkApiStartupState(apiBaseUrl);
+  const mediaState = getMediaRuntimeState();
+
+  if (!apiState.reachable) {
+    appendLogLine(`[admin] startup-warning ${apiState.reason}`);
+  }
+  if (!mediaState.ffmpegExists) {
+    appendLogLine('[admin] startup-warning ffmpeg.dll missing or unreadable');
+  }
+
+  return {
+    apiBaseUrl,
+    apiConfigured: apiState.configured,
+    apiReachable: apiState.reachable,
+    apiStatusCode: apiState.statusCode,
+    apiReason: apiState.reason,
+    ffmpegPath: mediaState.ffmpegPath,
+    ffmpegExists: mediaState.ffmpegExists,
+    ffmpegSize: mediaState.ffmpegSize,
+    ffmpegRepaired: ffmpegRepairState.repaired,
+    ffmpegRepairSource: ffmpegRepairState.sourcePath,
+    ffmpegRepairError: ffmpegRepairState.error,
+  };
+});
+
 app.whenReady().then(() => {
   appendLogLine('[admin] app started');
+  const mediaState = tryRepairFfmpegIfMissing();
+  if (!mediaState.ffmpegExists) {
+    appendLogLine(`[admin] startup-warning ffmpeg.dll missing path=${mediaState.ffmpegPath}`);
+    dialog.showMessageBox({
+      type: 'warning',
+      buttons: ['Continue'],
+      defaultId: 0,
+      title: 'Verdium Admin Startup Warning',
+      message: 'ffmpeg.dll is missing. The app will continue, but media features may fail.',
+      detail: `Expected path: ${mediaState.ffmpegPath}\nFix: run the app from the full unpacked release folder, not only the EXE file.`,
+    }).catch(() => {
+      // Keep startup non-blocking even if dialog display fails.
+    });
+  }
   logMediaRuntimeState();
   createWindow();
 });

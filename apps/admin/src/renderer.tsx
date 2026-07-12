@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { theme } from '../../../packages/shared/src/theme';
 import { AdminBridge } from '../../../packages/shared/src/adminBridge';
 
@@ -7,6 +7,51 @@ const forms = bridge.registerForms();
 
 export function AdminRenderer() {
   const verifier = bridge.registerVerifier();
+  const [startupHealth, setStartupHealth] = useState<any>(null);
+
+  useEffect(() => {
+    const adminApi = (window as any)?.verdiumAdmin;
+    if (!adminApi?.getStartupHealth) {
+      return;
+    }
+    adminApi.getStartupHealth().then(setStartupHealth).catch(() => {
+      setStartupHealth({
+        apiConfigured: false,
+        apiReachable: false,
+        apiReason: 'Startup health check unavailable.',
+        ffmpegExists: true,
+      });
+    });
+  }, []);
+
+  const startupMessage = useMemo(() => {
+    if (!startupHealth) {
+      return 'Checking startup health...';
+    }
+
+    const notes = [];
+    if (!startupHealth.apiConfigured) {
+      notes.push('API is not configured. App loaded in local mode.');
+    } else if (!startupHealth.apiReachable) {
+      notes.push('API did not respond at startup. App loaded in local mode.');
+    } else {
+      notes.push('API reachable.');
+    }
+
+    if (!startupHealth.ffmpegExists) {
+      notes.push('ffmpeg.dll is missing; media features may be limited.');
+      if (startupHealth.ffmpegRepairSource) {
+        notes.push(`Repair attempted from: ${startupHealth.ffmpegRepairSource}.`);
+      }
+      if (startupHealth.ffmpegRepairError) {
+        notes.push(`Repair error: ${startupHealth.ffmpegRepairError}.`);
+      }
+    } else if (startupHealth.ffmpegRepaired) {
+      notes.push('ffmpeg.dll was repaired automatically at startup.');
+    }
+
+    return notes.join(' ');
+  }, [startupHealth]);
 
   return (
     <div style={layout}>
@@ -15,6 +60,10 @@ export function AdminRenderer() {
         <p style={subtitle}>Atrium Copia</p>
       </header>
       <main style={card}>
+        <div style={startupBanner}>
+          <strong>Startup Status</strong>
+          <p style={startupText}>{startupMessage}</p>
+        </div>
         <h2 style={sectionTitle}>Form Gateway</h2>
         <p style={body}>All driver-side vehicle, insurance, invoice, and tax submissions must pass through this desktop executable before release.</p>
         <div style={grid}>
@@ -40,5 +89,7 @@ const sectionTitle = { marginTop: 0 } as const;
 const body = { lineHeight: 1.6, color: theme.colors.text } as const;
 const grid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginTop: 18 } as const;
 const button = { background: theme.colors.accent, color: '#06110f', border: 'none', borderRadius: 14, padding: '14px 16px', fontWeight: 700 } as const;
+const startupBanner = { marginBottom: 16, background: theme.colors.panel, borderRadius: 14, border: `1px solid ${theme.colors.accentSoft}`, padding: 12 } as const;
+const startupText = { margin: '8px 0 0', color: theme.colors.muted, lineHeight: 1.45 } as const;
 const panel = { marginTop: 18, background: theme.colors.panel, borderRadius: 16, padding: 16 } as const;
 const pre = { margin: 0, whiteSpace: 'pre-wrap', color: theme.colors.muted } as const;

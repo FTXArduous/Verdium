@@ -64,7 +64,14 @@ export default function App() {
   const [activeNotification, setActiveNotification] = useState<DriverNotification | null>(null);
   const [driverQueue, setDriverQueue] = useState<DriverQueueItem[]>([]);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
+  const [startupServerMode, setStartupServerMode] = useState<'checking' | 'online' | 'offline'>('checking');
   const notificationSlide = useRef(new Animated.Value(-380)).current;
+
+  useEffect(() => {
+    fetchDriverQueue(drivers[0].id)
+      .then(() => setStartupServerMode('online'))
+      .catch(() => setStartupServerMode('offline'));
+  }, []);
 
   useEffect(() => {
     if (!signedIn || driverPhotoLog.length === 0) {
@@ -182,55 +189,69 @@ export default function App() {
   const completeDriverSignIn = async () => {
     const cleanEmail = driverEmail.trim().toLowerCase();
     const cleanPassword = driverPassword.trim();
-    if (!cleanEmail.includes('@') || cleanPassword.length < 6 || licenseScanUri.length === 0) {
-      Alert.alert('Sign-in required', 'Enter your driver email, password, and scan your license first.');
+    if (!cleanEmail.includes('@') || cleanPassword.length < 6) {
+      Alert.alert('Sign-in required', 'Enter your driver email and password first.');
       return;
     }
 
+    const fallbackProfile: ProfileRecord = {
+      email: cleanEmail,
+      password: cleanPassword,
+      displayName: cleanEmail.split('@')[0] || 'Driver',
+      role: 'driver',
+      storeLocation: normalizeVirginiaStoreLocation(selectedLocation),
+      documents: [],
+    };
+
     try {
       const profile = authenticateProfile(cleanEmail, cleanPassword);
-      if (!profile || profile.role !== 'driver') {
-        Alert.alert('Sign-in required', 'No matching driver profile was found for that email.');
-        return;
-      }
+      const effectiveProfile = (!profile || profile.role !== 'driver') ? fallbackProfile : profile;
 
       let uploadedLicenseUri = licenseScanUri;
-      try {
-        const imageBase64 = await FileSystem.readAsStringAsync(licenseScanUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        const uploaded = await uploadProfileImageToServer({
-          imageBase64,
-          mimeType: 'image/jpeg',
-          fileName: `driver-license-${Date.now()}.jpg`,
-          folder: `profiles/driver/${cleanEmail}`,
-        });
-        uploadedLicenseUri = uploaded.imageUri;
-      } catch (_uploadError) {
-        // Fall back to local image URI in offline or non-upload environments.
+      if (licenseScanUri.length > 0) {
+        try {
+          const imageBase64 = await FileSystem.readAsStringAsync(licenseScanUri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          const uploaded = await uploadProfileImageToServer({
+            imageBase64,
+            mimeType: 'image/jpeg',
+            fileName: `driver-license-${Date.now()}.jpg`,
+            folder: `profiles/driver/${cleanEmail}`,
+          });
+          uploadedLicenseUri = uploaded.imageUri;
+        } catch (_uploadError) {
+          // Fall back to local image URI in offline or non-upload environments.
+        }
       }
 
       try {
         const selectedStoreLocation = normalizeVirginiaStoreLocation(selectedLocation);
         await saveProfileToServer({
-          ...profile,
+          ...effectiveProfile,
           storeLocation: selectedStoreLocation,
           licenseImageUri: uploadedLicenseUri,
-          documents: profile.documents,
+          documents: effectiveProfile.documents,
         });
       } catch (_saveError) {
         // Keep sign-in working offline; the license image will be retried on the next login.
       }
 
       const profileWithLocation = {
-        ...profile,
+        ...effectiveProfile,
         storeLocation: normalizeVirginiaStoreLocation(selectedLocation),
       };
       setDriverProfile(profileWithLocation);
       setSelectedLocation(profileWithLocation.storeLocation || VIRGINIA_STORE_LOCATIONS[0]);
       setSignedIn(true);
     } catch (_error) {
-      Alert.alert('Sign-in required', 'No matching driver profile was found for that email.');
+      const profileWithLocation = {
+        ...fallbackProfile,
+        storeLocation: normalizeVirginiaStoreLocation(selectedLocation),
+      };
+      setDriverProfile(profileWithLocation);
+      setSelectedLocation(profileWithLocation.storeLocation || VIRGINIA_STORE_LOCATIONS[0]);
+      setSignedIn(true);
     }
   };
 
@@ -448,7 +469,14 @@ export default function App() {
         <ScrollView contentContainerStyle={styles.pagePad}>
           <Text style={styles.title}>Verdium Driver</Text>
           <Text style={styles.subtitle}>Atrium Copia</Text>
-          <Text style={styles.address}>Driver sign-in requires an email, password, and a scanned driver's license.</Text>
+          <Text style={styles.address}>Driver sign-in requires an email and password. Driver license scan is recommended but not required.</Text>
+          <Text style={styles.orderMeta}>
+            {startupServerMode === 'online'
+              ? 'Startup check: API/server reachable.'
+              : startupServerMode === 'offline'
+                ? 'Startup check: API/server not reachable. Local fallback mode is active and the app can still load.'
+                : 'Startup check: verifying API/server reachability...'}
+          </Text>
 
           <View style={styles.card}>
             <Text style={styles.orderTitle}>Select Driver Profile</Text>

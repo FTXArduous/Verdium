@@ -1,5 +1,8 @@
 directories:
   output: dist
   buildResources: build
+extraFiles:
+  - from: node_modules/electron/dist/ffmpeg.dll
+    to: ffmpeg.dll
 files: []
 electronVersion: 30.0.0

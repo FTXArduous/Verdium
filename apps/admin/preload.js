@@ -10,4 +10,7 @@ contextBridge.exposeInMainWorld('verdiumAdmin', {
   getConfig() {
     return ipcRenderer.invoke('verdium-config');
   },
+  getStartupHealth() {
+    return ipcRenderer.invoke('verdium-startup-health');
+  },
 });

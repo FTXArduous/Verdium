@@ -9,6 +9,14 @@
     "check": "node --check main.js",
     "build:win-dir": "electron-builder --dir --win"
   },
+  "build": {
+    "extraFiles": [
+      {
+        "from": "node_modules/electron/dist/ffmpeg.dll",
+        "to": "ffmpeg.dll"
+      }
+    ]
+  },
   "devDependencies": {
     "electron": "30.0.0",
     "electron-builder": "^26.15.2"

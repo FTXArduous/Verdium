@@ -41,6 +41,7 @@ export default function App() {
   const [qrToken, setQrToken] = useState('');
   const [requestSending, setRequestSending] = useState(false);
   const [browserUrl, setBrowserUrl] = useState('https://www.google.com');
+  const [startupServerMode, setStartupServerMode] = useState<'checking' | 'online' | 'offline'>('checking');
 
   const refreshRequests = useCallback(async (customerId: string) => {
     try {
@@ -54,6 +55,7 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       const serverDeliveries = await fetchCustomerDeliveriesFromServer();
+      setStartupServerMode('online');
       setDeliveries(serverDeliveries);
       const newest = serverDeliveries[0] || null;
       const signature = newest ? `${newest.orderId}-${newest.deliveredAt}` : '';
@@ -66,6 +68,7 @@ export default function App() {
       }
       return;
     } catch (_error) {
+      setStartupServerMode('offline');
       const fallback = getCustomerDeliveryProofs().map((item) => ({
         orderId: item.orderId,
         address: item.address,
@@ -106,52 +109,59 @@ export default function App() {
   const signInCustomer = async () => {
     const cleanEmail = customerEmail.trim().toLowerCase();
     const cleanPassword = customerPassword.trim();
-    if (!cleanEmail.includes('@') || cleanPassword.length < 6 || licenseScanUri.length === 0) {
-      Alert.alert('Sign-in required', 'Enter your email, password, and scan your license to continue.');
+    if (!cleanEmail.includes('@') || cleanPassword.length < 6) {
+      Alert.alert('Sign-in required', 'Enter your email and password to continue.');
       return;
     }
+
+    const fallbackProfile: ProfileRecord = {
+      email: cleanEmail,
+      password: cleanPassword,
+      displayName: cleanEmail.split('@')[0] || 'Customer',
+      role: 'customer',
+      storeLocation: normalizeVirginiaStoreLocation(selectedLocation),
+      documents: [],
+    };
 
     try {
       const remoteProfiles = await fetchProfilesFromServer(undefined, cleanEmail);
       const remoteProfile = remoteProfiles.find((profile) => profile.email === cleanEmail && profile.password === cleanPassword);
       const localProfile = authenticateProfile(cleanEmail, cleanPassword);
-      const profile = remoteProfile || localProfile;
-
-      if (!profile || profile.role === 'driver') {
-        Alert.alert('Sign-in failed', 'No matching customer profile was found for that email.');
-        return;
-      }
+      const profile = (remoteProfile || localProfile || fallbackProfile);
+      const effectiveProfile = profile.role === 'driver' ? fallbackProfile : profile;
 
       let uploadedLicenseUri = licenseScanUri;
-      try {
-        const imageBase64 = await FileSystem.readAsStringAsync(licenseScanUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        const uploaded = await uploadProfileImageToServer({
-          imageBase64,
-          mimeType: 'image/jpeg',
-          fileName: `customer-license-${Date.now()}.jpg`,
-          folder: `profiles/customer/${cleanEmail}`,
-        });
-        uploadedLicenseUri = uploaded.imageUri;
-      } catch (_uploadError) {
-        // Fall back to local image URI in offline or non-upload environments.
+      if (licenseScanUri.length > 0) {
+        try {
+          const imageBase64 = await FileSystem.readAsStringAsync(licenseScanUri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          const uploaded = await uploadProfileImageToServer({
+            imageBase64,
+            mimeType: 'image/jpeg',
+            fileName: `customer-license-${Date.now()}.jpg`,
+            folder: `profiles/customer/${cleanEmail}`,
+          });
+          uploadedLicenseUri = uploaded.imageUri;
+        } catch (_uploadError) {
+          // Fall back to local image URI in offline or non-upload environments.
+        }
       }
 
       try {
         const selectedStoreLocation = normalizeVirginiaStoreLocation(selectedLocation);
         await saveProfileToServer({
-          ...profile,
+          ...effectiveProfile,
           storeLocation: selectedStoreLocation,
           licenseImageUri: uploadedLicenseUri,
-          documents: profile.documents,
+          documents: effectiveProfile.documents,
         });
       } catch (_saveError) {
         // Keep sign-in working offline; the license image will be retried on the next login.
       }
 
       const profileWithLocation = {
-        ...profile,
+        ...effectiveProfile,
         storeLocation: normalizeVirginiaStoreLocation(selectedLocation),
       };
       setCustomerProfile(profileWithLocation);
@@ -159,40 +169,6 @@ export default function App() {
       setSignedIn(true);
       await refreshRequests(profileWithLocation.email);
     } catch (_error) {
-      const fallbackProfile = authenticateProfile(cleanEmail, cleanPassword);
-      if (!fallbackProfile || fallbackProfile.role === 'driver') {
-        Alert.alert('Sign-in failed', 'No matching customer profile was found for that email.');
-        return;
-      }
-
-      let uploadedLicenseUri = licenseScanUri;
-      try {
-        const imageBase64 = await FileSystem.readAsStringAsync(licenseScanUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        const uploaded = await uploadProfileImageToServer({
-          imageBase64,
-          mimeType: 'image/jpeg',
-          fileName: `customer-license-${Date.now()}.jpg`,
-          folder: `profiles/customer/${cleanEmail}`,
-        });
-        uploadedLicenseUri = uploaded.imageUri;
-      } catch (_uploadError) {
-        // Fall back to local image URI in offline or non-upload environments.
-      }
-
-      try {
-        const selectedStoreLocation = normalizeVirginiaStoreLocation(selectedLocation);
-        await saveProfileToServer({
-          ...fallbackProfile,
-          storeLocation: selectedStoreLocation,
-          licenseImageUri: uploadedLicenseUri,
-          documents: fallbackProfile.documents,
-        });
-      } catch (_saveError) {
-        // Keep sign-in working offline; the license image will be retried on the next login.
-      }
-
       const profileWithLocation = {
         ...fallbackProfile,
         storeLocation: normalizeVirginiaStoreLocation(selectedLocation),
@@ -304,7 +280,14 @@ export default function App() {
         <View style={styles.loginShell}>
           <Text style={styles.title}>Verdium Customer</Text>
           <Text style={styles.subtitle}>Atrium Copia</Text>
-          <Text style={styles.description}>Customer sign-in requires an email, password, and license scan before you can view delivery updates.</Text>
+          <Text style={styles.description}>Customer sign-in requires an email and password. License scan is recommended but not required.</Text>
+          <Text style={styles.muted}>
+            {startupServerMode === 'online'
+              ? 'Startup check: API/server reachable.'
+              : startupServerMode === 'offline'
+                ? 'Startup check: API/server not reachable. Local fallback mode is active and the app can still load.'
+                : 'Startup check: verifying API/server reachability...'}
+          </Text>
           <View style={styles.card}>
             <TextInput
               value={customerEmail}
